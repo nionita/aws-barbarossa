@@ -77,23 +77,28 @@ class DSPSA:
         tm = np.rint(pi - delta / 2)
         return tp, tm, delta
 
-    def save_status(self, file):
+    '''
+    Serialize (JSON) the changing parts of the DSPSA object (status)
+    '''
+    def serialize_status(self):
         dic = {
             'step': self.step,
             'since': self.since,
             'theta': self.theta.tolist()
         }
-        jsonstr = json.dumps(dic)
-        with open(file, 'w', encoding='utf-8') as of:
-            print(jsonstr, file=of)
+        return json.dumps(dic)
 
     '''
     Optimize by the classical DSPSA method
+    The callback is called after every step
+    It is called with the DSPSA object and it must return True
+    if the optimization has to be stopped immediately
     '''
-    def optimize(self):
+    def optimize(self, callback):
         done = False
         while not done:
             done = self.step_dspsa()
+            done = done or callback(self)
         return self.theta
 
     def step_dspsa(self):
@@ -339,12 +344,13 @@ class Config:
                             print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, section+1, len(vals)))
                             error = True
         for mand in Config.mandatory_fields:
-            if mand not in values:
-                print('Config does not contain mandatory field {}'.format(mand))
+            if values[mand] is None:
+                print('Config does not define mandatory field "{}"'.format(mand))
                 error = True
 
         if error:
             raise Exception('Config file has errors')
+
         hasScale = False
 
         # Collect the eval parameters
@@ -420,15 +426,19 @@ def play(tp, tm, config):
     else:
         return elowish((w + 0.5 * d) / (w + d + l))
 
-def optimize(opt):
-    done = False
-    while not done:
-        done = opt.step_dspsa()
-        if opt.step % 10 == 0:
-            opt.report(opt.theta)
-        if opt.save is not None and opt.step % opt.save == 0:
-            opt.save_status(opt.config.name + '-save.txt')
-    return np.rint(opt.theta)
+def optimize_callback_local(opt):
+    if opt.step % 10 == 0:
+        opt.report(opt.theta)
+    if opt.save is not None and opt.step % opt.save == 0:
+        jsonstr = opt.serialize_status()
+        # We write to a new file, to avoid a crash while saving
+        # and then rename to correct save file
+        nfile = 'new-' + opt.config.name + '-save.txt'
+        sfile = opt.config.name + '-save.txt'
+        with open(nfile, 'w', encoding='utf-8') as of:
+            print(jsonstr, file=of)
+        os.replace(nfile, sfile)
+    return False
 
 def get_sqs():
     sqs = boto3.resource('sqs')
@@ -504,13 +514,19 @@ def argument_parser():
 Read the config file, encode it and create a SQS request for aws-barbarossa
 '''
 def send_to_cloud(args):
-    cfc = args.config.read()
-    a = encoding(cfc)
-    print('CFC len:', len(cfc))
-    print('Z64 len:', len(a))
+    print('Sending to cloud optimization')
+    config = Config(args.config)
+    message = {
+        'config': config.__dict__
+    }
+    jbody = json.dumps(message)
+    body = encoding(jbody)
+    print('plain len:', len(jbody))
+    print('c+b64 len:', len(body))
 
-    # queue = get_sqs()
-    # process_all_requests(queue)
+    queue = get_sqs()
+    resp = queue.send_message( MessageGroupId='original-request', MessageBody=body)
+    print('Request was sent, response:', resp)
 
 '''
 This runs on AWS
@@ -530,7 +546,7 @@ def run_local_optimization(args):
     else:
         save = config.save
     opt = DSPSA(config, play, save=save)
-    r = optimize(opt)
+    r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
     opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
@@ -539,7 +555,7 @@ def run_local_optimization(args):
 if __name__ == '__main__':
     parser = argument_parser()
     args = parser.parse_args()
-    print('Parsed:', args)
+    # print('Parsed:', args)
 
     if args.command == 'cloud':
         send_to_cloud(args)
@@ -548,22 +564,9 @@ if __name__ == '__main__':
     else:
         run_local_optimization(args)
 
-    # confFile = sys.argv[1]
-    # config = Config(confFile)
-
     # # Test: to/from json should be identity
     # jsonstr = json.dumps(config.__dict__)
     # config1 = Config(json.loads(jsonstr))
 
     # if config.__dict__ != config1.__dict__:
     #     print('Not equal')
-
-    # # Test: to JSON, compress, base 64
-    # jsonstr = json.dumps(config.__dict__)
-    # print('JSON len:', len(jsonstr))
-    # cbytes = zlib.compress(jsonstr.encode())
-    # b64 = base64.b64encode(cbytes)
-    # print('Base64 len:', len(b64))
-    # print('In base64:', b64)
-
-    # # Real

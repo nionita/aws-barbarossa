@@ -4,11 +4,13 @@ set -v
 # First parameter: branch to test
 BRANCH=$1
 
-TEMP=~/temp
+HOME=/home/ubuntu
+TEMP=$HOME/temp
 REPO=https://github.com/nionita/Barbarossa.git
 DIR=Barbarossa
 EXEDIR=s3://storage.acons.at/chess/aws-barbarossa/exe
 
+cd $HOME
 [ -d $TEMP ] && rm -rf $TEMP
 
 mkdir $TEMP
