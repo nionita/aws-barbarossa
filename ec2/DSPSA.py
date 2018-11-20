@@ -8,6 +8,7 @@ Created on Mon Apr 24 15:59:24 2017
 import numpy as np
 import random
 import math
+import argparse
 import subprocess
 import re
 import os
@@ -16,6 +17,9 @@ import sys
 import json
 import zlib
 import base64
+import boto3
+
+version = '0.0.1'
 
 # DSPSA
 # We have to optimize a stochastic function of n integer parameters,
@@ -46,7 +50,7 @@ def elowish(frac):
 Implementation of DSPSA
 """
 class DSPSA:
-    def __init__(self, config, save=None, status=None):
+    def __init__(self, config, f, save=None, status=None):
         self.config = config
         self.pnames = config.pnames
         self.smalla = config.laststep * math.pow(1.1 * config.msteps + 1, config.alpha)
@@ -67,6 +71,9 @@ class DSPSA:
             self.step = status['step']
             self.since = status['since']
             self.theta = np.array(status['theta'], dtype=np.float32)
+        if self.rend is not None:
+            self.rtheta = np.rint(self.theta)
+        self.func = f
 
     # Generate next 2 points for gradient calculation
     def random_direction(self):
@@ -92,41 +99,41 @@ class DSPSA:
     '''
     Optimize by the classical DSPSA method
     '''
-    def optimize(self, f):
-        print('scale:', self.scale)
-        if self.rend is not None:
-            rtheta = np.rint(self.theta)
-        while self.step < self.msteps:
-            print('Step:', self.step)
-            tp, tm, delta = self.random_direction()
-            print('Params +:', tp)
-            print('Params -:', tm)
-            df = f(tp, tm, self.config)
-            gk = df / delta
-            ak = self.smalla / math.pow(1 + self.biga + self.step, self.alpha)
-            agk = ak * gk
-            print('df:', df, 'ak:', ak)
-            print('gk:', gk)
-            print('ak * gk:', agk)
-            # Here: + because we maximize!
-            self.theta += agk
-            print('theta:', self.theta)
-            if self.rend is not None:
-                ntheta = np.rint(self.theta)
-                if np.all(ntheta == rtheta):
-                    self.since += 1
-                    if self.since >= self.rend:
-                        print('Rounded parameters unchanged for', self.rend, 'steps')
-                        break
-                else:
-                    rtheta = ntheta
-                    self.since = 0
-            if self.save is None and self.step % 10 == 0:
-                self.report(self.theta)
-            self.step += 1
-            if self.save is not None and self.step % self.save == 0:
-                self.save_status('status.txt')
+    def optimize(self):
+        done = False
+        while not done:
+            done = self.step_dspsa()
         return self.theta
+
+    def step_dspsa(self):
+        if self.step >= self.msteps:
+            return True
+        print('Step:', self.step)
+        tp, tm, delta = self.random_direction()
+        print('Params +:', tp)
+        print('Params -:', tm)
+        df = self.func(tp, tm, self.config)
+        gk = df / delta
+        ak = self.smalla / math.pow(1 + self.biga + self.step, self.alpha)
+        agk = ak * gk
+        print('df:', df, 'ak:', ak)
+        print('gk:', gk)
+        print('ak * gk:', agk)
+        # Here: + because we maximize!
+        self.theta += agk
+        print('theta:', self.theta)
+        self.step += 1
+        if self.rend is not None:
+            ntheta = np.rint(self.theta)
+            if np.all(ntheta == self.rtheta):
+                self.since += 1
+                if self.since >= self.rend:
+                    print('Rounded parameters unchanged for', self.rend, 'steps')
+                    return True
+            else:
+                self.rtheta = ntheta
+                self.since = 0
+        return False
 
     """
     Momentum optimizer with friction
@@ -413,10 +420,94 @@ def play(tp, tm, config):
     else:
         return elowish((w + 0.5 * d) / (w + d + l))
 
-if __name__ == '__main__':
+def optimize(opt):
+    if self.save is None and self.step % 10 == 0:
+        self.report(self.theta)
+    if self.save is not None and self.step % self.save == 0:
+        self.save_status('status.txt')
 
-    confFile = sys.argv[1]
-    config = Config(confFile)
+def get_sqs():
+    sqs = boto3.resource('sqs')
+    queue = sqs.get_queue_by_name(QueueName='aws-barbarossa-requests.fifo')
+    print('Queue URL:', queue.url)
+    return queue
+
+'''
+Gets & returns a request from the given AWS queue, sets the visibility timeout
+'''
+def get_request(queue, visibility=10):
+    requests = []
+    wait = 20
+    attribute_names = ['MessageGroupId', 'MessageDeduplicationId', 'SequenceNumber']
+    requests = queue.receive_messages(MaxNumberOfMessages=1, AttributeNames=attribute_names,
+        WaitTimeSeconds=wait, VisibilityTimeout=visibility)
+    return requests
+
+'''
+Requests are processed undefinitely, as log as we have some
+'''
+def process_all_requests(queue):
+    while True:
+        print('Getting a request from the queue')
+        requests = get_request(queue)
+
+        if len(requests) == 0:
+            # Should we cancel the spot instance here?
+            return
+
+        print('Requests:')
+        for request in requests:
+            process_request(request)
+
+def process_request(request):
+    print(request.body)
+    print('Process...')
+    print('Delete message:')
+    request.delete()
+    print('Message deleted')
+
+def encoding(inp: str):
+    cbytes = zlib.compress(inp.encode())
+    b64 = base64.b64encode(cbytes)
+    return b64.decode()
+
+def decoding(inp: str):
+    zbytes = base64.b64decode(inp.encode())
+    ebytes = zlib.decompress(zbytes)
+    return ebytes.decode()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Parameter optimization for Barbarossa')
+    parser.add_argument('--version', action='version', version=version)
+    subparsers = parser.add_subparsers(dest='command', help='run sub-commands: local, cloud or aws')
+
+    local = subparsers.add_parser('local', help='run an optimization request locally')
+    local.add_argument('config', type=argparse.FileType('r'))
+
+    aws = subparsers.add_parser('aws', help='run an optimization request on AWS (requests from SQS)')
+
+    cloud = subparsers.add_parser('cloud', help='send an optimization request to AWS')
+    cloud.add_argument('config', type=argparse.FileType('r'))
+
+    args = parser.parse_args()
+    print('Parsed:', args)
+
+    if args.command == 'cloud':
+        # Read the config file, encode it and create a SQS request for aws-barbarossa
+        cfc = args.config.read()
+        a = encoding(cfc)
+        print('CFC len:', len(cfc))
+        print('Z64 len:', len(a))
+
+        # queue = get_sqs()
+        # process_all_requests(queue)
+    elif args.command == 'aws':
+        print('This must run on AWS')
+    else:
+        print('This is a local optimization')
+
+    # confFile = sys.argv[1]
+    # config = Config(confFile)
 
     # # Test: to/from json should be identity
     # jsonstr = json.dumps(config.__dict__)
@@ -433,11 +524,11 @@ if __name__ == '__main__':
     # print('Base64 len:', len(b64))
     # print('In base64:', b64)
 
-    # Real
-    opt = DSPSA(config, save=2)
-    r = opt.optimize(play)
-    #r = opt.momentum(play, config)
-    #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
-    pref, suff = os.path.split(confFile)
-    opt.report(r, title='Optimum', file=os.path.join(pref, 'optimum-' + suff))
-    opt.report(r, title='Optimum', file=None)
+    # # Real
+    # opt = DSPSA(config, play, save=2)
+    # r = optimize(opt)
+    # #r = opt.momentum(play, config)
+    # #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
+    # pref, suff = os.path.split(confFile)
+    # opt.report(r, title='Optimum', file=os.path.join(pref, 'optimum-' + suff))
+    # opt.report(r, title='Optimum', file=None)
