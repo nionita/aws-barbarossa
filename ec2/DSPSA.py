@@ -19,36 +19,27 @@ import zlib
 import base64
 import boto3
 
-version = '0.0.1'
+version = '0.1.0'
+eps0 = 1e-2
+eps1 = 1 - eps0
 
 # DSPSA
 # We have to optimize a stochastic function of n integer parameters,
 # but we can only get noisy results from measurements
 
-# Transform Elo to fraction and back
-ln10p400 = -math.log(10.0) / 400.0
-iln10p400 = 1. / ln10p400
-
-def elo2frac(elo):
-    return 1.0 / (1.0 + math.exp(elo * ln10p400))
-
-def frac2elo(frac):
-    return math.log(1. / frac - 1.) * iln10p400
-
-# Transforming mean result in an elo difference involves the constants log(10) and 400,
-# but at the end those are multiplicative, so it is just a matter of step size
-# Here frac is between 0 and 1, exclusive! More than 0.5 means the first player is better
-# We have guards for very excentric results, eps0 and eps1, which also limit the gradient amplitude:
-eps0 = 1e-2
-eps1 = 1 - eps0
-
+'''
+Transforming mean result in an elo difference involves the constants log(10) and 400,
+but at the end those are multiplicative, so it is just a matter of step size
+Here frac is between 0 and 1, exclusive! More than 0.5 means the first player is better
+We have guards for very excentric results, eps0 and eps1, which also limit the gradient amplitude:
+'''
 def elowish(frac):
     frac = max(eps0, min(eps1, frac))
     return -math.log(1 / frac - 1)
 
-"""
+'''
 Implementation of DSPSA
-"""
+'''
 class DSPSA:
     def __init__(self, config, f, save=None, status=None):
         self.config = config
@@ -135,10 +126,10 @@ class DSPSA:
                 self.since = 0
         return False
 
-    """
+    '''
     Momentum optimizer with friction
     beta1 + beta2 <= 1
-    """
+    '''
     def momentum(self, f, config, beta1=0.8, beta2=0.1):
         p = self.theta.shape[0]
         gm = np.zeros(p, dtype=np.float32)
@@ -161,14 +152,14 @@ class DSPSA:
                 self.report(self.theta)
         return np.rint(self.theta)
 
-    """
+    '''
     Adadelta should maintain different learning rates per dimension, but in our
     case all dimensions would have equal rates, because in every step only
     the sign is different, and we can't break the simmetry.
     Also, our gradient is just an estimate.
     To deal with these problems we maintain an average gradient and work with it
     as if it would be the current one
-    """
+    '''
     def adadelta(self, f, config, mult=1, beta=0.9, gamma=0.9, niu=0.9, eps=1E-8):
         print('scale:', self.scale)
         p = self.theta.shape[0]
@@ -216,6 +207,8 @@ It represents a config file with the following structure:
 # The file begins with section 0, which defines match parameters
 # (the selfplay program, the current directory for the selfplay execution, input pgn file
 # for the games, search depth, number of games per match) and optimization hyper parameters
+name: test
+optdir: C:/Learn/dspsa
 selfplay: C:/astra/SelfPlay-dnp.exe
 playdir: C:/Learn/dspsa
 ipgnfile: C:/astra/open-moves/open-moves.fen
@@ -246,16 +239,21 @@ class Config:
     # These are acceptable fields in section 0, with their type and maybe default value
     # S is string, I integer and F float
     fields = {
+        'name': 'S',
+        'optdir': ('S', '.'),
         'selfplay': 'S',
-        'playdir': ('S', ''),
+        'playdir': ('S', '.'),
         'ipgnfile': 'S',
         'depth': ('I', 4),
         'games': ('I', 16),
         'laststep': ('F', 0.1),
         'alpha': ('F', 0.501),
         'msteps': ('I', 1000),
-        'rend': 'I'
+        'rend': 'I',
+        'save': ('I', 10)
     }
+
+    mandatory_fields = ['name', 'selfplay', 'ipgnfile']
 
     '''
     A config can be initialized either with a file name or with a dictionary
@@ -266,8 +264,8 @@ class Config:
     '''
     def __init__(self, source):
         if type(source) != dict:
-            # Called with a filename
-            source = Config.readConfig(self.fields, source)
+            # Called with an open file
+            source = Config.readConfig(source)
         # Here source is a dictionary
         for name, val in source.items():
             self.__setattr__(name, val)
@@ -278,9 +276,9 @@ class Config:
             raise Exception('Config: wrong field type {} for field {}'.format(field_type, field_name))
 
     @staticmethod
-    def create_defaults(fields):
+    def create_defaults():
         values = dict()
-        for field_name, field_spec in fields.items():
+        for field_name, field_spec in Config.fields.items():
             if type(field_spec) == str:
                 Config.accept_data_type(field_name, field_spec)
                 values[field_name] = None
@@ -291,60 +289,62 @@ class Config:
         return values
 
     @staticmethod
-    def readConfig(fields, conffile):
-        if not os.path.exists(conffile):
-            raise Exception('Config file {} does not exist'.format(conffile))
+    def readConfig(cof):
         # Transform the config file to a dictionary
-        values = Config.create_defaults(fields)
+        values = Config.create_defaults()
         seen = set()
         sectionNames = [dict(), dict()]
         section = 0
         lineno = 0
         error = False
-        with open(conffile, 'r') as cof:
-            for line in cof:
-                lineno += 1
-                # split the comment path
-                line = re.split('#', line)[0].lstrip().rstrip()
-                if len(line) > 0:
-                    if line == '[params]':
-                        section = 1
-                    elif line == '[weights]':
-                        section = 2
-                    else:
-                        parts = re.split(r':\s*', line, 1)
-                        name = parts[0]
-                        val = parts[1]
-                        if section == 0:
-                            if name in fields:
-                                field_type = fields[name]
-                                if type(field_type) == tuple:
-                                    field_type = field_type[0]
-                                if field_type == 'S':
-                                    values[name] = val
-                                elif field_type == 'I':
-                                    values[name] = int(val)
-                                elif field_type == 'F':
-                                    values[name] = float(val)
-                                else:
-                                    raise Exception('Cannot be here!')
+        for line in cof:
+            lineno += 1
+            # split the comment path
+            line = re.split('#', line)[0].lstrip().rstrip()
+            if len(line) > 0:
+                if line == '[params]':
+                    section = 1
+                elif line == '[weights]':
+                    section = 2
+                else:
+                    parts = re.split(r':\s*', line, 1)
+                    name = parts[0]
+                    val = parts[1]
+                    if section == 0:
+                        if name in Config.fields:
+                            field_type = Config.fields[name]
+                            if type(field_type) == tuple:
+                                field_type = field_type[0]
+                            if field_type == 'S':
+                                values[name] = val
+                            elif field_type == 'I':
+                                values[name] = int(val)
+                            elif field_type == 'F':
+                                values[name] = float(val)
                             else:
-                                print('Config error in line {:d}: unknown config name {:s}'.format(lineno, name))
-                                error = True
+                                raise Exception('Cannot be here!')
                         else:
-                            vals = re.split(r',\s*', val)
-                            if len(vals) == section + 1:
-                                if name in seen:
-                                    print('Config error in line {:d}: name {:s} already seen'.format(lineno, name))
-                                    error = True
-                                else:
-                                    seen.add(name)
-                                    sectionNames[section-1][name] = [int(v) for v in vals]
-                            else:
-                                print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, section+1, len(vals)))
+                            print('Config error in line {:d}: unknown config name {:s}'.format(lineno, name))
+                            error = True
+                    else:
+                        vals = re.split(r',\s*', val)
+                        if len(vals) == section + 1:
+                            if name in seen:
+                                print('Config error in line {:d}: name {:s} already seen'.format(lineno, name))
                                 error = True
+                            else:
+                                seen.add(name)
+                                sectionNames[section-1][name] = [int(v) for v in vals]
+                        else:
+                            print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, section+1, len(vals)))
+                            error = True
+        for mand in Config.mandatory_fields:
+            if mand not in values:
+                print('Config does not contain mandatory field {}'.format(mand))
+                error = True
+
         if error:
-            raise Exception('Config file {} has errors'.format(conffile))
+            raise Exception('Config file has errors')
         hasScale = False
 
         # Collect the eval parameters
@@ -421,10 +421,14 @@ def play(tp, tm, config):
         return elowish((w + 0.5 * d) / (w + d + l))
 
 def optimize(opt):
-    if self.save is None and self.step % 10 == 0:
-        self.report(self.theta)
-    if self.save is not None and self.step % self.save == 0:
-        self.save_status('status.txt')
+    done = False
+    while not done:
+        done = opt.step_dspsa()
+        if opt.step % 10 == 0:
+            opt.report(opt.theta)
+        if opt.save is not None and opt.step % opt.save == 0:
+            opt.save_status(opt.config.name + '-save.txt')
+    return np.rint(opt.theta)
 
 def get_sqs():
     sqs = boto3.resource('sqs')
@@ -476,35 +480,73 @@ def decoding(inp: str):
     ebytes = zlib.decompress(zbytes)
     return ebytes.decode()
 
-if __name__ == '__main__':
+'''
+Define the argument parser
+'''
+def argument_parser():
     parser = argparse.ArgumentParser(description='Parameter optimization for Barbarossa')
     parser.add_argument('--version', action='version', version=version)
     subparsers = parser.add_subparsers(dest='command', help='run sub-commands: local, cloud or aws')
 
     local = subparsers.add_parser('local', help='run an optimization request locally')
+    local.add_argument('--save', type=int, help='save optimization status after given steps (default: 10)')
     local.add_argument('config', type=argparse.FileType('r'))
 
     aws = subparsers.add_parser('aws', help='run an optimization request on AWS (requests from SQS)')
+    aws.add_argument('--save', type=int, help='save optimization status after given steps (default: 10)')
 
     cloud = subparsers.add_parser('cloud', help='send an optimization request to AWS')
     cloud.add_argument('config', type=argparse.FileType('r'))
 
+    return parser
+
+'''
+Read the config file, encode it and create a SQS request for aws-barbarossa
+'''
+def send_to_cloud(args):
+    cfc = args.config.read()
+    a = encoding(cfc)
+    print('CFC len:', len(cfc))
+    print('Z64 len:', len(a))
+
+    # queue = get_sqs()
+    # process_all_requests(queue)
+
+'''
+This runs on AWS
+'''
+def run_on_aws(args):
+    print('This must run on AWS')
+
+'''
+This runs a local optimization
+'''
+def run_local_optimization(args):
+    print('Running local optimization')
+    config = Config(args.config)
+    os.chdir(config.optdir)
+    if args.save:
+        save = args.save
+    else:
+        save = config.save
+    opt = DSPSA(config, play, save=save)
+    r = optimize(opt)
+    #r = opt.momentum(play, config)
+    #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
+    opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
+    opt.report(r, title='Optimum', file=None)
+
+if __name__ == '__main__':
+    parser = argument_parser()
     args = parser.parse_args()
     print('Parsed:', args)
 
     if args.command == 'cloud':
-        # Read the config file, encode it and create a SQS request for aws-barbarossa
-        cfc = args.config.read()
-        a = encoding(cfc)
-        print('CFC len:', len(cfc))
-        print('Z64 len:', len(a))
-
-        # queue = get_sqs()
-        # process_all_requests(queue)
+        send_to_cloud(args)
     elif args.command == 'aws':
-        print('This must run on AWS')
+        run_on_aws(args)
     else:
-        print('This is a local optimization')
+        run_local_optimization(args)
 
     # confFile = sys.argv[1]
     # config = Config(confFile)
@@ -525,10 +567,3 @@ if __name__ == '__main__':
     # print('In base64:', b64)
 
     # # Real
-    # opt = DSPSA(config, play, save=2)
-    # r = optimize(opt)
-    # #r = opt.momentum(play, config)
-    # #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
-    # pref, suff = os.path.split(confFile)
-    # opt.report(r, title='Optimum', file=os.path.join(pref, 'optimum-' + suff))
-    # opt.report(r, title='Optimum', file=None)
