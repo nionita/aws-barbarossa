@@ -74,15 +74,77 @@ def process_request(request):
     request.delete()
     print('Message deleted')
 
-def encoding(inp: str):
-    cbytes = zlib.compress(inp.encode())
+'''
+Encode a dictionary to JSON, compress, and encode to base64
+'''
+def encoding(message):
+    # Make a json string
+    jbody = json.dumps(message)
+    # Compress
+    cbytes = zlib.compress(jbody.encode())
+    # Encode base64
     b64 = base64.b64encode(cbytes)
+    # Return the string
     return b64.decode()
 
+'''
+Decode from base64, decompress, decode from JSON
+'''
 def decoding(inp: str):
+    # Decode from base64
     zbytes = base64.b64decode(inp.encode())
-    ebytes = zlib.decompress(zbytes)
-    return ebytes.decode()
+    # Decompress
+    jstr = zlib.decompress(zbytes).decode()
+    # From JSON
+    return json.loads(jstr)
+
+'''
+Read the config file, encode it and create a SQS request for aws-barbarossa
+'''
+def send_to_cloud(args):
+    print('Sending to cloud optimization')
+    config = Config(args.config)
+    message = {
+        'config': config.__dict__
+    }
+    body = encoding(message)
+    print('c+b64 len:', len(body))
+
+    queue = get_sqs()
+    resp = queue.send_message( MessageGroupId='original-request', MessageBody=body)
+    print('Request was sent, response:', resp)
+
+'''
+This runs on AWS
+'''
+def run_on_aws(args):
+    print('Running optimization part on AWS')
+    queue = get_sqs()
+    reqs = get_request(queue)
+    if len(reqs) == 0:
+        print('No more requests, terminate')
+    else:
+        req = reqs[0]
+        message = decoding(req.body)
+        print('I got this message:', message)
+
+'''
+This runs a local optimization
+'''
+def run_local_optimization(args):
+    print('Running local optimization')
+    config = Config(args.config)
+    os.chdir(config.optdir)
+    if args.save:
+        save = args.save
+    else:
+        save = config.save
+    opt = DSPSA(config, play, save=save)
+    r = opt.optimize(optimize_callback_local)
+    #r = opt.momentum(play, config)
+    #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
+    opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
+    opt.report(r, title='Optimum', file=None)
 
 '''
 Define the argument parser
@@ -103,48 +165,6 @@ def argument_parser():
     cloud.add_argument('config', type=argparse.FileType('r'))
 
     return parser
-
-'''
-Read the config file, encode it and create a SQS request for aws-barbarossa
-'''
-def send_to_cloud(args):
-    print('Sending to cloud optimization')
-    config = Config(args.config)
-    message = {
-        'config': config.__dict__
-    }
-    jbody = json.dumps(message)
-    body = encoding(jbody)
-    print('plain len:', len(jbody))
-    print('c+b64 len:', len(body))
-
-    queue = get_sqs()
-    resp = queue.send_message( MessageGroupId='original-request', MessageBody=body)
-    print('Request was sent, response:', resp)
-
-'''
-This runs on AWS
-'''
-def run_on_aws(args):
-    print('This must run on AWS')
-
-'''
-This runs a local optimization
-'''
-def run_local_optimization(args):
-    print('Running local optimization')
-    config = Config(args.config)
-    os.chdir(config.optdir)
-    if args.save:
-        save = args.save
-    else:
-        save = config.save
-    opt = DSPSA(config, play, save=save)
-    r = opt.optimize(optimize_callback_local)
-    #r = opt.momentum(play, config)
-    #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
-    opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
-    opt.report(r, title='Optimum', file=None)
 
 if __name__ == '__main__':
     parser = argument_parser()
