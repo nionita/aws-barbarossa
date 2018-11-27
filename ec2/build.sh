@@ -1,5 +1,5 @@
 #!/bin/bash
-set -v
+set -vx
 
 # First parameter: branch to test
 BRANCH=$1
@@ -24,29 +24,42 @@ RUN=$HOME/run
 [ -d $RUN ] || mkdir $RUN
 
 # Static files (pgns)
+echo Synchronising static files
 cd $STATIC
 aws s3 sync $S3HOME/static/ .
 
 # Find/Copy/Build the SelfPlay binary
-if [ ! -f $ENGINES/$BINARY-$BRANCH ]
+if [ ! -x $ENGINES/$BINARY-$BRANCH ]
 then
+    echo Binary $ENGINES/$BINARY-$BRANCH does not exist locally
     cd $ENGINES
     if aws s3 cp $S3HOME/exe/$BINARY-$BRANCH .
     then
+        echo Binary $ENGINES/$BINARY-$BRANCH copied from s3
         chmod +x $BINARY-$BRANCH
     else
+        echo Binary $ENGINES/$BINARY-$BRANCH does not exist on s3
         cd $HOME
         [ -d $TEMP ] && rm -rf $TEMP
 
         mkdir $TEMP
-
         cd $TEMP
-        git clone --branch $BRANCH --depth 1 $REPO $DIR
 
-        cd $BUILDDIR
-        stack build
-        LIR=$(stack path | grep local-install-root | sed 's/local-install-root: //')
-        mv $LIR/bin/$BINARY $ENGINES/$BINARY-$BRANCH
-        aws s3 cp $ENGINES/$BINARY-$BRANCH $S3HOME/exe/
+        echo Clone branch $BRANCH from repo $REPO
+        if git clone --branch $BRANCH --depth 1 $REPO
+        then
+            if cd $BUILDDIR && stack build
+            then
+                LIR=$(stack path | grep local-install-root | sed 's/local-install-root: //')
+                mv $LIR/bin/$BINARY $ENGINES/$BINARY-$BRANCH
+                aws s3 cp $ENGINES/$BINARY-$BRANCH $S3HOME/exe/
+            else
+                echo Cannot build SelfPlay binary
+                exit 1
+            fi
+        else
+            echo Cannot clone branch $BRANCH
+            exit 1
+        fi
     fi
 fi

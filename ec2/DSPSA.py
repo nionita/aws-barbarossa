@@ -9,10 +9,12 @@ import argparse
 import os
 import os.path
 import sys
+import subprocess
 import json
 import zlib
 import base64
 import boto3
+import re
 
 from Play import play
 from Config import Config
@@ -20,11 +22,37 @@ from Optim import DSPSA
 
 version = '0.1.0'
 
+def run_build(branch, timeout=None):
+    print('Building', branch)
+    args = 'build.sh ' + branch
+    # For windows: shell=True to hide the window of the child process
+    # This could be better achieved by using STARTUPINFO
+    # check=True: will raise an exception when not terminating normally
+    try:
+        err = False
+        cp = subprocess.run(args, check=True, timeout=timeout, universal_newlines=True, shell=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except Exception as e:
+        print('Build error:', e)
+        cp = e
+        err = True
+    finally:
+        print('Arguments used to call build:')
+        print(cp.args)
+        print('Output:')
+        print(cp.stdout)
+        if err:
+            raise cp
+
+def optimize_callback_aws(opt):
+    # On aws we will always have save
+    return opt.step % opt.save == 0
+
 def optimize_callback_local(opt):
     if opt.step % 10 == 0:
         opt.report(opt.theta)
     if opt.save is not None and opt.step % opt.save == 0:
-        jsonstr = opt.serialize_status()
+        jsonstr = json.dumps(opt.get_status())
         # We write to a new file, to avoid a crash while saving
         # and then rename to correct save file
         nfile = 'new-' + opt.config.name + '-save.txt'
@@ -114,19 +142,81 @@ def send_to_cloud(args):
     resp = queue.send_message( MessageGroupId='original-request', MessageBody=body)
     print('Request was sent, response:', resp)
 
+def rewrite_config_for_aws(home, cf):
+    spe = re.split(r'/', cf['selfplay'])[-1]
+    if not spe.startswith('SelfPlay'):
+        raise Exception('Could not identify SelfPlay: ' + spe)
+    spe = re.sub(r'^SelfPlay-', '', spe)
+    branch = re.sub(r'\.exe$', '', spe)
+    pgn = re.split(r'/', cf['ipgnfile'])[-1]
+    rundir = os.path.join(home, 'run')
+    cf['optdir'] = rundir
+    cf['playdir'] = rundir
+    cf['selfplay'] = os.path.join(home, 'engines', 'SelfPlay-' + branch)
+    cf['ipgnfile'] = os.path.join(home, 'static', pgn)
+    return branch, pgn
+
 '''
 This runs on AWS
 '''
 def run_on_aws(args):
     print('Running optimization part on AWS')
+    home = os.environ['HOME']
+    branch_old, pgn_old = '', ''
     queue = get_sqs()
-    reqs = get_request(queue)
-    if len(reqs) == 0:
-        print('No more requests, terminate')
-    else:
+    while True:
+        reqs = get_request(queue)
+        if len(reqs) == 0:
+            print('No more requests, terminate')
+            return
         req = reqs[0]
         message = decoding(req.body)
-        print('I got this message:', message)
+        cf = message['config']
+        # Some config parameters must be adapted to run on AWS
+        branch, pgn = rewrite_config_for_aws(home, cf)
+        print('This is the new config')
+        print(cf)
+        try:
+            if branch != branch_old or pgn != pgn_old:
+                # Increase message visibility for the build time
+                res = req.change_visibility(VisibilityTimeout=300)
+                run_build(branch)
+                branch_old, pgn_old = branch, pgn
+
+            config = Config(cf)
+            if 'status' in message:
+                status = message['status']
+            else:
+                status = None
+
+            # We should compute how long it takes per step and modify save to be around every hour or so
+            if config.save:
+                save = config.save
+            else:
+                save = 10
+
+            # Changing message visibility: should be calculated
+            res = req.change_visibility(VisibilityTimeout=3600)
+            print('Message visibility result:', res)
+
+            # Create the optimizer & optimize
+            opt = DSPSA(config, play, status=status, save=config.save)
+            r = opt.optimize(optimize_callback_aws)
+
+            if opt.done:
+                opt.report(r, title='Optimum', file=config.name + '-optimum.txt')
+                # Send the result to S3
+                # TODO: why is not writing the report file?
+            else:
+                status = opt.get_status()
+                # Send new request to SQS
+
+        except Exception as e:
+            print('Working on this request terminated with error:', e)
+
+        finally:
+            res = req.delete()
+            print('Message delete result:', res)
 
 '''
 This runs a local optimization

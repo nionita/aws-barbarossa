@@ -1,6 +1,5 @@
 import math
 import numpy as np
-import json
 
 # DSPSA
 # We have to optimize a stochastic function of n integer parameters,
@@ -24,10 +23,12 @@ class DSPSA:
         self.rend = config.rend
         self.save = save
         if status is None:
+            self.done = False
             self.step = 0
             self.since = 0
             self.theta = np.array(config.pinits, dtype=np.float32)
         else:
+            self.done = status['done']
             self.step = status['step']
             self.since = status['since']
             self.theta = np.array(status['theta'], dtype=np.float32)
@@ -49,13 +50,13 @@ class DSPSA:
     '''
     Serialize (JSON) the changing parts of the DSPSA object (status)
     '''
-    def serialize_status(self):
-        dic = {
+    def get_status(self):
+        return {
             'step': self.step,
             'since': self.since,
-            'theta': self.theta.tolist()
+            'theta': self.theta.tolist(),
+            'done': self.done
         }
-        return json.dumps(dic)
 
     '''
     Optimize by the classical DSPSA method
@@ -65,14 +66,15 @@ class DSPSA:
     '''
     def optimize(self, callback):
         done = False
-        while not done:
-            done = self.step_dspsa()
-            done = done or callback(self)
+        while not (self.done or done):
+            self.step_dspsa()
+            done = callback(self)
         return self.theta
 
     def step_dspsa(self):
         if self.step >= self.msteps:
-            return True
+            self.done = True
+            return
         print('Step:', self.step)
         tp, tm, delta = self.random_direction()
         print('Params +:', tp)
@@ -94,11 +96,11 @@ class DSPSA:
                 self.since += 1
                 if self.since >= self.rend:
                     print('Rounded parameters unchanged for', self.rend, 'steps')
-                    return True
+                    self.done = True
+                    return
             else:
                 self.rtheta = ntheta
                 self.since = 0
-        return False
 
     '''
     Momentum optimizer with friction
