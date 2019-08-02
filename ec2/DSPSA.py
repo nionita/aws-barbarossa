@@ -13,14 +13,15 @@ import subprocess
 import json
 import zlib
 import base64
-import boto3
 import re
 
 from Play import play
 from Config import Config
 from Optim import DSPSA
+from AWS import get_sqs
 
 version = '0.1.0'
+aws_queue_name = 'aws-barbarossa-requests.fifo'
 
 def run_build(branch, timeout=None):
     print('Building', branch)
@@ -55,18 +56,12 @@ def optimize_callback_local(opt):
         jsonstr = json.dumps(opt.get_status())
         # We write to a new file, to avoid a crash while saving
         # and then rename to correct save file
-        nfile = 'new-' + opt.config.name + '-save.txt'
         sfile = opt.config.name + '-save.txt'
+        nfile = 'new-' + sfile
         with open(nfile, 'w', encoding='utf-8') as of:
             print(jsonstr, file=of)
         os.replace(nfile, sfile)
     return False
-
-def get_sqs():
-    sqs = boto3.resource('sqs')
-    queue = sqs.get_queue_by_name(QueueName='aws-barbarossa-requests.fifo')
-    print('Queue URL:', queue.url)
-    return queue
 
 '''
 Gets & returns a request from the given AWS queue, sets the visibility timeout
@@ -80,7 +75,7 @@ def get_request(queue, visibility=10):
     return requests
 
 '''
-Requests are processed undefinitely, as log as we have some
+Requests are processed undefinitely, as long as we have some
 '''
 def process_all_requests(queue):
     while True:
@@ -138,8 +133,8 @@ def send_to_cloud(args):
     body = encoding(message)
     print('c+b64 len:', len(body))
 
-    queue = get_sqs()
-    resp = queue.send_message( MessageGroupId='original-request', MessageBody=body)
+    queue = get_sqs(aws_queue_name)
+    resp = queue.send_message(MessageGroupId='original-request', MessageBody=body)
     print('Request was sent, response:', resp)
 
 def rewrite_config_for_aws(home, cf):
@@ -163,7 +158,7 @@ def run_on_aws(args):
     print('Running optimization part on AWS')
     home = os.environ['HOME']
     branch_old, pgn_old = '', ''
-    queue = get_sqs()
+    queue = get_sqs(aws_queue_name)
     while True:
         reqs = get_request(queue)
         if len(reqs) == 0:
