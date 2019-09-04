@@ -32,7 +32,7 @@ def play(tp, tm, config):
     with open('playerm.cfg', 'w', encoding='utf-8') as plf:
         for p, v in zip(config.pnames, tm):
             plf.write('%s=%d\n' % (p, v))
-    skip = random.randint(0, 25000)
+    skip = random.randint(0, config.ipgnlen - config.games + 1)
     #print('Skip = %d' % skip)
     args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
             '-i', config.ipgnfile, '-d', str(config.depth), '-s', str(skip), '-f', str(config.games)]

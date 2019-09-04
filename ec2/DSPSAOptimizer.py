@@ -1,6 +1,8 @@
 import math
 import numpy as np
 
+from Utils import Statistics
+
 # DSPSA
 # We have to optimize a stochastic function of n integer parameters,
 # but we can only get noisy results from measurements
@@ -8,7 +10,7 @@ import numpy as np
 '''
 Implementation of DSPSA
 '''
-class DSPSA:
+class DSPSAOptimizer:
     def __init__(self, config, f, save=None, status=None):
         self.config = config
         self.pnames = config.pnames
@@ -27,11 +29,13 @@ class DSPSA:
             self.step = 0
             self.since = 0
             self.theta = np.array(config.pinits, dtype=np.float32)
+            self.statistics = Statistics(self.theta)
         else:
             self.done = status['done']
             self.step = status['step']
             self.since = status['since']
             self.theta = np.array(status['theta'], dtype=np.float32)
+            self.statistics = status['statistics']
         if self.rend is not None:
             self.rtheta = np.rint(self.theta)
         self.func = f
@@ -55,7 +59,8 @@ class DSPSA:
             'step': self.step,
             'since': self.since,
             'theta': self.theta.tolist(),
-            'done': self.done
+            'done': self.done,
+            'statistics': self.statistics.get_status()
         }
 
     '''
@@ -88,7 +93,10 @@ class DSPSA:
         print('ak * gk:', agk)
         # Here: + because we maximize!
         self.theta += agk
+        self.statistics.step(agk)
         print('theta:', self.theta)
+        print('pressure:', self.statistics.pressure())
+        print('relevance:', self.statistics.relevance())
         self.step += 1
         if self.rend is not None:
             ntheta = np.rint(self.theta)
@@ -174,3 +182,5 @@ class DSPSA:
                 print(title, file=repf)
                 for n, v in zip(self.pnames, list(vec)):
                     print(n, '=', v, file=repf)
+
+# vim: tabstop=4 shiftwidth=4 expandtab

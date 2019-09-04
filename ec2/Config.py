@@ -41,10 +41,12 @@ class Config:
     # S is string, I integer and F float
     fields = {
         'name': 'S',
+        'method': ('S', 'Bayes'),
         'optdir': ('S', '.'),
         'selfplay': 'S',
         'playdir': ('S', '.'),
         'ipgnfile': 'S',
+        'ipgnlen': 'I',
         'depth': ('I', 4),
         'games': ('I', 16),
         'laststep': ('F', 0.1),
@@ -54,7 +56,7 @@ class Config:
         'save': ('I', 10)
     }
 
-    mandatory_fields = ['name', 'selfplay', 'ipgnfile']
+    mandatory_fields = ['name', 'selfplay', 'ipgnfile', 'ipgnlen']
 
     '''
     A config can be initialized either with a file name or with a dictionary

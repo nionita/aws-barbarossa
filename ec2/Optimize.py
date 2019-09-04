@@ -14,10 +14,12 @@ import json
 import zlib
 import base64
 import re
+from datetime import datetime, timedelta
 
 from Play import play
 from Config import Config
-from Optim import DSPSA
+from DSPSAOptimizer import DSPSAOptimizer
+from BayesOptimizer import BayesOptimizer
 from AWS import get_sqs
 
 version = '0.1.0'
@@ -50,6 +52,7 @@ def optimize_callback_aws(opt):
     return opt.step % opt.save == 0
 
 def optimize_callback_local(opt):
+    report_times(opt)
     if opt.step % 10 == 0:
         opt.report(opt.theta)
     if opt.save is not None and opt.step % opt.save == 0:
@@ -62,6 +65,21 @@ def optimize_callback_local(opt):
             print(jsonstr, file=of)
         os.replace(nfile, sfile)
     return False
+
+start_date = datetime.now()
+
+def report_times(opt):
+    global start_date
+    now = datetime.now()
+    td = now - start_date
+    # The opt step is the next to execute, i.e. first time step == 1
+    seconds_per_step = td.total_seconds() / opt.step
+    remaining_steps = opt.msteps - opt.step
+    remaining_seconds = remaining_steps * seconds_per_step
+    remaining = timedelta(seconds=remaining_seconds)
+    eta = now + remaining
+    print('Since:', td.total_seconds(), 'seconds per step:', seconds_per_step)
+    print('Remaining seconds:', remaining.seconds, 'ETA:', eta.strftime('%d.%m.%Y %H:%M:%S'))
 
 '''
 Gets & returns a request from the given AWS queue, sets the visibility timeout
@@ -195,7 +213,7 @@ def run_on_aws(args):
             print('Message visibility result:', res)
 
             # Create the optimizer & optimize
-            opt = DSPSA(config, play, status=status, save=config.save)
+            opt = DSPSAOptimizer(config, play, status=status, save=config.save)
             r = opt.optimize(optimize_callback_aws)
 
             if opt.done:
@@ -224,7 +242,10 @@ def run_local_optimization(args):
         save = args.save
     else:
         save = config.save
-    opt = DSPSA(config, play, save=save)
+    if config.method == 'DSPSA':
+        opt = DSPSAOptimizer(config, play, save=save)
+    elif config.method == 'Bayes':
+        opt = BayesOptimizer(config, play, save=save)
     r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
@@ -269,3 +290,5 @@ if __name__ == '__main__':
 
     # if config.__dict__ != config1.__dict__:
     #     print('Not equal')
+
+# vim: tabstop=4 shiftwidth=4 expandtab
