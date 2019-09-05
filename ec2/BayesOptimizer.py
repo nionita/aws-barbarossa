@@ -1,4 +1,4 @@
-from skopt import Optimizer
+from skopt import Optimizer, expected_minimum
 from skopt.space import Integer
 # from sklearn.externals.joblib import Parallel, delayed
 
@@ -19,25 +19,30 @@ class BayesOptimizer:
         # All dimensions are integers in our case
         # Here we will consider the scale as the +/- range from the initial value
         dimensions = []
-        for i in range(len(config.pinits)):
-            start = config.pinits[i] - config.pscale[i]
-            end   = config.pinits[i] + config.pscale[i]
+        x0 = []
+        for pi, si in zip(config.pinits, config.pscale):
+            x0.append(pi)
+            start = pi - si
+            end   = pi + si
             dimensions.append(Integer(start, end))
-        self.optimizer = Optimizer(dimensions=dimensions, base_estimator='gp')
+        # print('Initial', x0, 'dims', dimensions)
+        self.optimizer = Optimizer(dimensions=dimensions, base_estimator=config.regressor)
         self.done = False
         if status is None:
             self.theta = None
             self.best = None
             self.xi = []
             self.yi = []
+            # When we start, we know that the initial point is the reference, mark it with 0
+            # But it does not seem to work...
+            # self.optimizer.tell(x0, 0)
         else:
             self.theta = status['theta']
             self.best = status['best']
             self.xi = status['xi']
             self.yi = status['yi']
-            for x, y in zip(self.xi, self.yi):
-                # Here: becasue we maximize (wile the bayes optimizer minimize), negate!
-                self.optimizer.tell(x, -y)
+            # Here: becasue we maximize (while the bayes optimizer minimizes), negate!
+            self.optimizer.tell(self.xi, list(map(lambda y: -y, self.yi)))
         self.step = len(self.xi)
         self.func = f
 
@@ -64,15 +69,25 @@ class BayesOptimizer:
     '''
     def optimize(self, callback):
         done = False
+        last = None
         while not (self.done or done):
-            self.step_ask_tell()
+            res = self.step_ask_tell()
+            # print('Type res:', type(res))
+            if res:
+                last = res
             done = callback(self)
-        return self.theta
+        # Instead of returning the current best, we return the one that the model considers best
+        if last is None or not last.models:
+            print('No models to calculate the expected maximum')
+            return self.theta
+        else:
+            xm, _ = expected_minimum(last)
+            return xm
 
     def step_ask_tell(self):
         if self.step >= self.msteps:
             self.done = True
-            return
+            return None
         print('Step:', self.step)
         x = self.optimizer.ask()
         print('Params:', x)
@@ -82,13 +97,14 @@ class BayesOptimizer:
         self.xi.append(list(map(int, x)))
         self.yi.append(y)
         # Here: because we maximize, negate!
-        self.optimizer.tell(x, -y)
+        res = self.optimizer.tell(x, -y)
         last = self.yi[-1]
         if self.best is None or last > self.best:
             self.theta = self.xi[-1]
             self.best = last
         print('Theta / value:', self.theta, '/', self.best)
         self.step += 1
+        return res
 
     def report(self, vec, title=None, file='report.txt'):
         if title is None:

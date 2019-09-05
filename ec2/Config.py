@@ -42,6 +42,7 @@ class Config:
     fields = {
         'name': 'S',
         'method': ('S', 'Bayes'),
+        'regressor': ('S', 'GP'),
         'optdir': ('S', '.'),
         'selfplay': 'S',
         'playdir': ('S', '.'),

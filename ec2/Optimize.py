@@ -78,8 +78,8 @@ def report_times(opt):
     remaining_seconds = remaining_steps * seconds_per_step
     remaining = timedelta(seconds=remaining_seconds)
     eta = now + remaining
-    print('Since:', td.total_seconds(), 'seconds per step:', seconds_per_step)
-    print('Remaining seconds:', remaining.seconds, 'ETA:', eta.strftime('%d.%m.%Y %H:%M:%S'))
+    print('Since:', td.total_seconds(), 'seconds, per step:', seconds_per_step, 'seconds')
+    print('Remaining:', remaining.seconds, 'seconds, ETA:', eta.strftime('%d.%m.%Y %H:%M:%S'))
 
 '''
 Gets & returns a request from the given AWS queue, sets the visibility timeout
