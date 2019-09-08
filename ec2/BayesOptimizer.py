@@ -26,24 +26,27 @@ class BayesOptimizer:
             end   = pi + si
             dimensions.append(Integer(start, end))
         # print('Initial', x0, 'dims', dimensions)
-        self.optimizer = Optimizer(dimensions=dimensions, base_estimator=config.regressor)
+        self.optimizer = Optimizer(
+                dimensions=dimensions,
+                base_estimator=config.regressor,
+                n_initial_points=self.msteps // 10)
         self.done = False
         if status is None:
-            self.theta = None
-            self.best = None
-            self.xi = []
-            self.yi = []
             # When we start, we know that the initial point is the reference, mark it with 0
-            # But it does not seem to work...
-            # self.optimizer.tell(x0, 0)
+            self.theta = x0
+            self.best = 0
+            self.xi = [ x0 ]
+            self.yi = [ 0 ]
+            self.optimizer.tell(x0, 0)
         else:
             self.theta = status['theta']
             self.best = status['best']
             self.xi = status['xi']
             self.yi = status['yi']
-            # Here: becasue we maximize (while the bayes optimizer minimizes), negate!
+            # Here: because we maximize (while the bayes optimizer minimizes), negate!
             self.optimizer.tell(self.xi, list(map(lambda y: -y, self.yi)))
-        self.step = len(self.xi)
+        # Because we added the reference result, we have now one measurement more than steps
+        self.step = len(self.xi) - 1
         self.func = f
 
     '''
@@ -81,6 +84,7 @@ class BayesOptimizer:
             print('No models to calculate the expected maximum')
             return self.theta
         else:
+            print('Best taken from expected maximum')
             xm, _ = expected_minimum(last)
             return xm
 
@@ -99,7 +103,7 @@ class BayesOptimizer:
         # Here: because we maximize, negate!
         res = self.optimizer.tell(x, -y)
         last = self.yi[-1]
-        if self.best is None or last > self.best:
+        if last > self.best:
             self.theta = self.xi[-1]
             self.best = last
         print('Theta / value:', self.theta, '/', self.best)

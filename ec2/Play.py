@@ -34,8 +34,14 @@ def play(tp, tm, config):
             plf.write('%s=%d\n' % (p, v))
     skip = random.randint(0, config.ipgnlen - config.games + 1)
     #print('Skip = %d' % skip)
-    args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
-            '-i', config.ipgnfile, '-d', str(config.depth), '-s', str(skip), '-f', str(config.games)]
+    if config.nodes:
+        args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
+                '-i', config.ipgnfile, '-d', str(config.depth), '-n', str(config.nodes),
+                '-s', str(skip), '-f', str(config.games)]
+    else:
+        args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
+                '-i', config.ipgnfile, '-d', str(config.depth),
+                '-s', str(skip), '-f', str(config.games)]
     # print('Will start:')
     # print(args)
     w = None
@@ -53,7 +59,10 @@ def play(tp, tm, config):
                 l = int(ls)
                 #print('I found the result %d, %d, %d' % (w, d, l))
     if w == None or w + d + l == 0:
-        #raise RuntimeError('No result from self play')
+        print('Play: No result from self play')
         return 0
     else:
+        print('Play:', w, d, l)
         return elowish((w + 0.5 * d) / (w + d + l))
+
+# vim: tabstop=4 shiftwidth=4 expandtab

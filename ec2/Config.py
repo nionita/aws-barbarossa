@@ -49,6 +49,7 @@ class Config:
         'ipgnfile': 'S',
         'ipgnlen': 'I',
         'depth': ('I', 4),
+        'nodes': 'I',
         'games': ('I', 16),
         'laststep': ('F', 0.1),
         'alpha': ('F', 0.501),
