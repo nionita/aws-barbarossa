@@ -3,6 +3,8 @@ import math
 import subprocess
 import re
 import os
+import os.path
+import shutil
 
 eps0 = 1e-2
 eps1 = 1 - eps0
@@ -20,28 +22,47 @@ def elowish(frac):
 resre = re.compile(r'End result')
 wdlre = re.compile('[() ,]')
 
-# Play a match with a given number of games between theta+ and theta-
-# Player 1 is theta+
-# Player 2 is theta-
-def play(tp, tm, config):
-    # print('chdir to', config.playdir)
+# When we work with a base param (like in bayesian optimization)
+# we want to be able to give a fixed configuration (in which we can have also
+# other parameters as the optimized ones set different as from the default
+# self playing program)
+base_file = None
+
+# When we have a ready base param config, this is given in the config
+# and we probably must copy it to the playdir
+def copy_base_file(config):
+    source = config.base
+    print('We have a base file:', source)
+    base_file = os.path.basename(source)
+    dest = config.playdir
+    if os.path.dirname(source) != dest:
+        print('Copy', source, 'to', dest)
+        # We copy it only when it's not already there
+        shutil.copy(source, dest)
+
+# Play a match with a given number of games between 2 param sets
+# Player 1 is theta+ or the candidate
+# Player 2 is theta- or the base param set
+def play(config, tp, tm=None):
     os.chdir(config.playdir)
     with open('playerp.cfg', 'w', encoding='utf-8') as plf:
         for p, v in zip(config.pnames, tp):
             plf.write('%s=%d\n' % (p, v))
-    with open('playerm.cfg', 'w', encoding='utf-8') as plf:
-        for p, v in zip(config.pnames, tm):
-            plf.write('%s=%d\n' % (p, v))
-    skip = random.randint(0, config.ipgnlen - config.games + 1)
-    #print('Skip = %d' % skip)
-    if config.nodes:
-        args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
-                '-i', config.ipgnfile, '-d', str(config.depth), '-n', str(config.nodes),
-                '-s', str(skip), '-f', str(config.games)]
+    if tm is None:
+        if base_file is None:
+            copy_base_file()
+        base = base_file
     else:
-        args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', 'playerm.cfg',
-                '-i', config.ipgnfile, '-d', str(config.depth),
-                '-s', str(skip), '-f', str(config.games)]
+        with open('playerm.cfg', 'w', encoding='utf-8') as plf:
+            for p, v in zip(config.pnames, tm):
+                plf.write('%s=%d\n' % (p, v))
+        base = 'playerm.cfg'
+    skip = random.randint(0, config.ipgnlen - config.games + 1)
+    args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', base,
+            '-i', config.ipgnfile, '-d', str(config.depth),
+            '-s', str(skip), '-f', str(config.games)]
+    if config.nodes:
+        args.extend(['-n', str(config.nodes)])
     # print('Will start:')
     # print(args)
     w = None

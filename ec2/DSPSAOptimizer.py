@@ -84,7 +84,7 @@ class DSPSAOptimizer:
         tp, tm, delta = self.random_direction()
         print('Params +:', tp)
         print('Params -:', tm)
-        df = self.func(tp, tm, self.config)
+        df = self.func(self.config, tp, tm)
         gk = df / delta
         ak = self.smalla / math.pow(1 + self.biga + self.step, self.alpha)
         agk = ak * gk

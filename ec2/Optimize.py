@@ -214,7 +214,7 @@ def run_on_aws(args):
             print('Message visibility result:', res)
 
             # Create the optimizer & optimize
-            opt = DSPSAOptimizer(config, play, status=status, save=config.save)
+            opt = makeOptimizer(config, save=config.save, status=status)
             r = opt.optimize(optimize_callback_aws)
 
             if opt.done:
@@ -243,15 +243,21 @@ def run_local_optimization(args):
         save = args.save
     else:
         save = config.save
-    if config.method == 'DSPSA':
-        opt = DSPSAOptimizer(config, play, save=save)
-    elif config.method == 'Bayes':
-        opt = BayesOptimizer(config, play, save=save)
+    opt = makeOptimizer(config, save=save)
     r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
     opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
     opt.report(r, title='Optimum', file=None)
+
+def makeOptimizer(config, save=10, status=None):
+    if config.method == 'DSPSA':
+        opt = DSPSAOptimizer(config, play, save=save, status=status)
+    elif config.method == 'Bayes':
+        opt = BayesOptimizer(config, play, save=save, status=status)
+    else:
+        raise ValueError('Optimizer method unknown' + config.method)
+    return opt
 
 '''
 Define the argument parser

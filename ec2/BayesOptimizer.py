@@ -26,10 +26,13 @@ class BayesOptimizer:
             end   = pi + si
             dimensions.append(Integer(start, end))
         # print('Initial', x0, 'dims', dimensions)
+        # When we start to use the regressor, we should have enough random points
+        # for a good space exploration
+        n_initial_points = max(self.msteps // 10, len(dimensions))
         self.optimizer = Optimizer(
                 dimensions=dimensions,
                 base_estimator=config.regressor,
-                n_initial_points=self.msteps // 10)
+                n_initial_points=n_initial_points)
         self.done = False
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
@@ -95,7 +98,7 @@ class BayesOptimizer:
         print('Step:', self.step)
         x = self.optimizer.ask()
         print('Params:', x)
-        y = self.func(x, self.base, self.config)
+        y = self.func(self.config, x, self.base)
         print('Result:', y)
         # The x returned by ask is of type [np.int32], so we have to cast it
         self.xi.append(list(map(int, x)))
