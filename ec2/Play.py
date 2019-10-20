@@ -45,7 +45,8 @@ def copy_base_file(config):
 # Player 2 is theta- or the base param set
 def play(config, tp, tm=None):
     os.chdir(config.playdir)
-    with open('playerp.cfg', 'w', encoding='utf-8') as plf:
+    pla = config.name + '-playerp.cfg'
+    with open(pla, 'w', encoding='utf-8') as plf:
         for p, v in zip(config.pnames, tp):
             plf.write('%s=%d\n' % (p, v))
     if tm is None:
@@ -53,12 +54,12 @@ def play(config, tp, tm=None):
             copy_base_file()
         base = base_file
     else:
-        with open('playerm.cfg', 'w', encoding='utf-8') as plf:
+        base = config.name + '-playerm.cfg'
+        with open(base, 'w', encoding='utf-8') as plf:
             for p, v in zip(config.pnames, tm):
                 plf.write('%s=%d\n' % (p, v))
-        base = 'playerm.cfg'
     skip = random.randint(0, config.ipgnlen - config.games + 1)
-    args = [config.selfplay, '-m', config.playdir, '-a', 'playerp.cfg', '-b', base,
+    args = [config.selfplay, '-m', config.playdir, '-a', pla, '-b', base,
             '-i', config.ipgnfile, '-d', str(config.depth),
             '-s', str(skip), '-f', str(config.games)]
     if config.nodes:

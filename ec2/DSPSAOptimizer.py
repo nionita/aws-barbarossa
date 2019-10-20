@@ -81,15 +81,31 @@ class DSPSAOptimizer:
             self.done = True
             return
         print('Step:', self.step)
+        ak = self.smalla / math.pow(1 + self.biga + self.step, self.alpha)
         tp, tm, delta = self.random_direction()
         print('Params +:', tp)
         print('Params -:', tm)
-        df = self.func(self.config, tp, tm)
-        gk = df / delta
-        ak = self.smalla / math.pow(1 + self.biga + self.step, self.alpha)
-        agk = ak * gk
-        print('df:', df, 'ak:', ak)
-        print('gk:', gk)
+        if self.config.triang == 'XA':
+            print('ak:', ak)
+            # We calculate the gradients as sum of 2 gradients, as if the base point would
+            # be the current parameter point (which is an exageration leading to greater gradients)
+            base = np.array(self.config.pinits, dtype=np.float32)
+            df = self.func(self.config, tp, base)
+            print('df+:', df)
+            gk = df / delta
+            print('gk+:', gk)
+            # The order is inverted here: base and tm!
+            df = self.func(self.config, base, tm)
+            print('df-:', df)
+            gk += df / delta
+            print('gk=:', gk)
+            agk = ak * gk
+        else:
+            df = self.func(self.config, tp, tm)
+            gk = df / delta
+            agk = ak * gk
+            print('df:', df, 'ak:', ak)
+            print('gk:', gk)
         print('ak * gk:', agk)
         # Here: + because we maximize!
         self.theta += agk

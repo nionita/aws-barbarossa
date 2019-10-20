@@ -43,6 +43,7 @@ class Config:
         'name': 'S',
         'method': ('S', 'Bayes'),
         'regressor': ('S', 'GP'),
+        'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
         'selfplay': 'S',
         'playdir': ('S', '.'),
