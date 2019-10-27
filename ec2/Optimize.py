@@ -66,14 +66,22 @@ def optimize_callback_local(opt):
         os.replace(nfile, sfile)
     return False
 
+# To calculate time statistics we need 2 globals, for start step and start date
+# Start step is 0 when we start a new optimization, but > 0 when we continue from
+# a saved state
+start_step = None
 start_date = datetime.now()
 
 def report_times(opt):
+    global start_step
     global start_date
-    now = datetime.now()
-    td = now - start_date
     # The opt step is the next to execute, i.e. first time step == 1
-    seconds_per_step = td.total_seconds() / opt.step
+    if start_step is None:
+        start_step = opt.step - 1
+    sd = opt.step - start_step  # step difference
+    now = datetime.now()
+    td = now - start_date   # time difference
+    seconds_per_step = td.total_seconds() / sd
     remaining_steps = opt.msteps - opt.step
     remaining_seconds = remaining_steps * seconds_per_step
     remaining = timedelta(seconds=remaining_seconds)
@@ -243,7 +251,17 @@ def run_local_optimization(args):
         save = args.save
     else:
         save = config.save
-    opt = makeOptimizer(config, save=save)
+    status = None
+    if args.restore:
+        sfile = config.name + '-save.txt'
+        print('Restoring status from', sfile)
+        try:
+            with open(sfile, 'r') as sofile:
+                status = json.load(sofile)
+        except Exception as exc:
+            print('Could not restore status from', sfile, ':', exc)
+            return
+    opt = makeOptimizer(config, save=save, status=status)
     r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
@@ -269,6 +287,8 @@ def argument_parser():
 
     local = subparsers.add_parser('local', help='run an optimization request locally')
     local.add_argument('--save', type=int, help='save optimization status after given steps (default: 10)')
+    local.add_argument('--continue', dest='restore', action='store_const',
+            const=True, default=False, help='continue optimization from last saved status')
     local.add_argument('config', type=argparse.FileType('r'))
 
     aws = subparsers.add_parser('aws', help='run an optimization request on AWS (requests from SQS)')

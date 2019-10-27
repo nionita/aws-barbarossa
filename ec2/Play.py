@@ -5,6 +5,7 @@ import re
 import os
 import os.path
 import shutil
+import concurrent.futures
 
 eps0 = 1e-2
 eps1 = 1 - eps0
@@ -40,6 +41,12 @@ def copy_base_file(config):
         # We copy it only when it's not already there
         shutil.copy(source, dest)
 
+# We play random openings from the given pgn file, and then more at once,
+# for efficiency reason, so we must skip a random number of games before we start
+# to play the given number of games
+def random_skip(pgnlen, games):
+    return random.randint(0, pgnlen - games + 1)
+
 # Play a match with a given number of games between 2 param sets
 # Player 1 is theta+ or the candidate
 # Player 2 is theta- or the base param set
@@ -58,12 +65,39 @@ def play(config, tp, tm=None):
         with open(base, 'w', encoding='utf-8') as plf:
             for p, v in zip(config.pnames, tm):
                 plf.write('%s=%d\n' % (p, v))
-    skip = random.randint(0, config.ipgnlen - config.games + 1)
     args = [config.selfplay, '-m', config.playdir, '-a', pla, '-b', base,
-            '-i', config.ipgnfile, '-d', str(config.depth),
-            '-s', str(skip), '-f', str(config.games)]
+            '-i', config.ipgnfile, '-d', str(config.depth)]
     if config.nodes:
         args.extend(['-n', str(config.nodes)])
+    games = config.play_chunk or config.games // config.parallel
+    total_starts = config.games // games
+    print('Play: starting', total_starts, 'times with', games, 'games each')
+
+    # Play the games in parallel, then collect and consolidate the results
+    w, d, l = 0, 0, 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as executor:
+        executions = [ executor.submit(play_one, config, list(args), games) for _ in range(total_starts) ]
+        for future in concurrent.futures.as_completed(executions):
+            try:
+                data = future.result()
+                w1, d1, l1 = data
+                print('Partial play result:', w1, d1, l1)
+            except Exception as exc:
+                print('Exception in one game:', exc)
+            else:
+                w += w1
+                d += d1
+                l += l1
+    if w + d + l == 0:
+        print('Play: No result from self play')
+        return 0
+    else:
+        print('Play:', w, d, l)
+        return elowish((w + 0.5 * d) / (w + d + l))
+
+def play_one(config, args, games):
+    skip = random_skip(config.ipgnlen, games)
+    args.extend(['-s', str(skip), '-f', str(games)])
     # print('Will start:')
     # print(args)
     w = None
@@ -80,11 +114,8 @@ def play(config, tp, tm=None):
                 d = int(ds)
                 l = int(ls)
                 #print('I found the result %d, %d, %d' % (w, d, l))
-    if w == None or w + d + l == 0:
-        print('Play: No result from self play')
-        return 0
-    else:
-        print('Play:', w, d, l)
-        return elowish((w + 0.5 * d) / (w + d + l))
+    if w is None:
+        return None
+    return w, d, l
 
 # vim: tabstop=4 shiftwidth=4 expandtab

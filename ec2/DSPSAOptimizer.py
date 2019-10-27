@@ -109,6 +109,9 @@ class DSPSAOptimizer:
         print('ak * gk:', agk)
         # Here: + because we maximize!
         self.theta += agk
+        # Regularize, factor should be < 1
+        if self.config.beta:
+            self.theta *= self.config.beta
         self.statistics.step(agk)
         print('theta:', self.theta)
         print('pressure:', self.statistics.pressure())

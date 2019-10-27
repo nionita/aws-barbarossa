@@ -54,9 +54,12 @@ class Config:
         'games': ('I', 16),
         'laststep': ('F', 0.1),
         'alpha': ('F', 0.501),
+        'beta': 'F',
         'msteps': ('I', 1000),
         'rend': 'I',
-        'save': ('I', 10)
+        'save': ('I', 10),
+	'parallel': ('I', 1),
+	'play_chunk': 'I'
     }
 
     mandatory_fields = ['name', 'selfplay', 'ipgnfile', 'ipgnlen']
