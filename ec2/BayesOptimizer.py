@@ -20,11 +20,17 @@ class BayesOptimizer:
         # Here we will consider the scale as the +/- range from the initial value
         dimensions = []
         x0 = []
-        for pi, si in zip(config.pinits, config.pscale):
-            x0.append(pi)
-            start = pi - si
-            end   = pi + si
-            dimensions.append(Integer(start, end))
+        assert type(config.pscale) == list or type(config.pmin) == list and type(config.pmax) == list
+        if type(config.pscale) == list:
+            for pi, si in zip(config.pinits, config.pscale):
+                x0.append(pi)
+                start = pi - si
+                end   = pi + si
+                dimensions.append(Integer(start, end))
+        else:
+            for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
+                x0.append(pi)
+                dimensions.append(Integer(si, ei))
         # print('Initial', x0, 'dims', dimensions)
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration

@@ -58,8 +58,8 @@ class Config:
         'msteps': ('I', 1000),
         'rend': 'I',
         'save': ('I', 10),
-	'parallel': ('I', 1),
-	'play_chunk': 'I'
+        'parallel': ('I', 1),
+        'play_chunk': 'I'
     }
 
     mandatory_fields = ['name', 'selfplay', 'ipgnfile', 'ipgnlen']
@@ -97,6 +97,18 @@ class Config:
                 values[field_name] = field_ini
         return values
 
+    # Reading the configuration file
+    # There are 3 sections: 0, 1 and 2
+    # Section 0 contains general parameter (like optimization method)
+    # We have a list with possible field names in this section, and some may have a default
+    # Section 1 contains params, i.e. one value per param
+    # Section 2 contains weights, i.e. 2 values per weight
+    # Number of config values per param/weight depends on optimization method:
+    # When using DSPSA, we have the starting params/weights (1/2) plus scale (1)
+    # When using Bayes, we have the starting params/weights (1/2) plus inf/sup limit (2/4)
+    # All params/weights must have the same number of values
+    # So we denote variant 1 as the one with 2/3 values, and variant 2 as the one with 3/6 values
+
     @staticmethod
     def readConfig(cof):
         # Transform the config file to a dictionary
@@ -106,6 +118,7 @@ class Config:
         section = 0
         lineno = 0
         error = False
+        expect = None
         for line in cof:
             lineno += 1
             # split the comment path
@@ -113,8 +126,20 @@ class Config:
             if len(line) > 0:
                 if line == '[params]':
                     section = 1
+                    if expect == 3:
+                        expect = 2
+                    elif expect == 6:
+                        expect = 3
+                    else:
+                        lenghts = [2, 3]
                 elif line == '[weights]':
                     section = 2
+                    if expect == 2:
+                        expect = 3
+                    elif expect == 3:
+                        expect = 6
+                    else:
+                        lenghts = [3, 6]
                 else:
                     parts = re.split(r':\s*', line, 1)
                     name = parts[0]
@@ -137,7 +162,10 @@ class Config:
                             error = True
                     else:
                         vals = re.split(r',\s*', val)
-                        if len(vals) == section + 1:
+                        if expect is None and len(vals) in lenghts or expect is not None and len(vals) == expect:
+                            if expect is None:
+                                expect = len(vals)
+
                             if name in seen:
                                 print('Config error in line {:d}: name {:s} already seen'.format(lineno, name))
                                 error = True
@@ -145,12 +173,19 @@ class Config:
                                 seen.add(name)
                                 sectionNames[section-1][name] = [int(v) for v in vals]
                         else:
-                            print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, section+1, len(vals)))
+                            if expect is None:
+                                print('Config error in line {:d}: should have {:d} or {:d} values, it has {:d}'.format(lineno, section+1, *lenghts, len(vals)))
+                            else:
+                                print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, expect, len(vals)))
                             error = True
         for mand in Config.mandatory_fields:
             if values[mand] is None:
                 print('Config does not define mandatory field "{}"'.format(mand))
                 error = True
+
+        if expect is None:
+            print('Config does not have parameters or weights')
+            error = True
 
         if error:
             raise Exception('Config file has errors')
@@ -158,33 +193,68 @@ class Config:
         hasScale = False
 
         # Collect the eval parameters
+        variant = None
         values['pnames'] = []
         values['pinits'] = []
         values['pscale'] = []
+        values['pmin'] = []
+        values['pmax'] = []
         for name, vals in sectionNames[0].items():
-            val = vals[0]
-            scale = vals[1]
-            values['pnames'].append(name)
-            values['pinits'].append(val)
-            values['pscale'].append(scale)
-            if scale != 1:
-                hasScale = True
+            assert variant is None or len(vals) == 2 and variant == 1 or len(vals) == 3 and variant == 2
+            if len(vals) == 2:
+                if variant is None:
+                    variant = 1
+                # We have: name: init, scale
+                values['pnames'].append(name)
+                values['pinits'].append(vals[0])
+                values['pscale'].append(vals[1])
+                if scale != 1:
+                    hasScale = True
+            else:
+                if variant is None:
+                    variant = 2
+                # We have: name: init, min, max
+                values['pnames'].append(name)
+                values['pinits'].append(vals[0])
+                values['pmin'].append(vals[1])
+                values['pmax'].append(vals[2])
 
         # Collect the eval weights
         for name, vals in sectionNames[1].items():
-            mid = vals[0]
-            end = vals[1]
-            scale = vals[2]
-            values['pnames'].append('mid.' + name)
-            values['pinits'].append(mid)
-            values['pscale'].append(scale)
-            values['pnames'].append('end.' + name)
-            values['pinits'].append(end)
-            values['pscale'].append(scale)
-            if scale != 1:
-                hasScale = True
+            assert variant is None or len(vals) == 3 and variant == 1 or len(vals) == 6 and variant == 2
+            if len(vals) == 3:
+                if variant is None:
+                    variant = 1
+                # We have: name: initMid, initEnd, scale
+                values['pnames'].append('mid.' + name)
+                values['pinits'].append(vals[0])
+                values['pscale'].append(scale)
+                values['pnames'].append('end.' + name)
+                values['pinits'].append(vals[1])
+                values['pscale'].append(vals[2])
+                if scale != 1:
+                    hasScale = True
+            else:
+                if variant is None:
+                    variant = 2
+                # We have: name: initMid, minMid, maxMid, initEnd, minEnd, maxEnd
+                values['pnames'].append('mid.' + name)
+                values['pinits'].append(vals[0])
+                values['pmin'].append(vals[1])
+                values['pmax'].append(vals[2])
+                values['pnames'].append('end.' + name)
+                values['pinits'].append(vals[3])
+                values['pmin'].append(vals[4])
+                values['pmax'].append(vals[5])
 
-        if not hasScale:
+        if variant == 1:
+            values['pmin'] = None
+            values['pmax'] = None
+            if not hasScale:
+                values['pscale'] = None
+        else:
             values['pscale'] = None
 
         return values
+
+# vim: tabstop=4 shiftwidth=4 expandtab
