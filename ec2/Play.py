@@ -75,19 +75,26 @@ def play(config, tp, tm=None):
 
     # Play the games in parallel, then collect and consolidate the results
     w, d, l = 0, 0, 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as executor:
-        executions = [ executor.submit(play_one, config, list(args), games) for _ in range(total_starts) ]
-        for future in concurrent.futures.as_completed(executions):
-            try:
-                data = future.result()
-                w1, d1, l1 = data
-                print('Partial play result:', w1, d1, l1)
-            except Exception as exc:
-                print('Exception in one game:', exc)
-            else:
-                w += w1
-                d += d1
-                l += l1
+    succ_starts = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
+        while total_starts > succ_starts:
+            to_start = total_starts - succ_starts
+            executions = [ pool.submit(play_one, config, list(args), games) for _ in range(to_start) ]
+            for future in concurrent.futures.as_completed(executions):
+                try:
+                    data = future.result()
+                except Exception as exc:
+                    print('Exception in one game thread:', exc)
+                else:
+                    if data is None:
+                        print('No result from game thread')
+                    else:
+                        succ_starts += 1
+                        w1, d1, l1 = data
+                        print('Partial play result: {} {} {}\t(remaining: {})'.format(w1, d1, l1, total_starts - succ_starts))
+                        w += w1
+                        d += d1
+                        l += l1
     if w + d + l == 0:
         print('Play: No result from self play')
         return 0
@@ -95,25 +102,25 @@ def play(config, tp, tm=None):
         print('Play:', w, d, l)
         return elowish((w + 0.5 * d) / (w + d + l))
 
-def play_one(config, args, games):
+# The timeout (in seconds?) is taken for 10 games with 20000 nodes
+# and may be wrong for longer games
+# We should keep statistics for current configuration and use them (with some margin)
+def play_one(config, args, games, timeout=360):
     skip = random_skip(config.ipgnlen, games)
     args.extend(['-s', str(skip), '-f', str(games)])
     # print('Will start:')
     # print(args)
     w = None
-    # For windows: shell=True to hide the window of the child process
-    with subprocess.Popen(args, bufsize=1, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          cwd=config.playdir, universal_newlines=True, shell=True) as proc:
-        for line in proc.stdout:
-            #print('Got:', line)
-            if resre.match(line):
-                #vals = wdlre.split(line)
-                #print(vals)
-                _, _, _, ws, ds, ls, _ = wdlre.split(line)
-                w = int(ws)
-                d = int(ds)
-                l = int(ls)
-                #print('I found the result %d, %d, %d' % (w, d, l))
+    # For windows: shell=True to hide the window of the child process - seems not to be necessary!
+    status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
+    for line in status.stdout.splitlines():
+        #print('Line:', line)
+        if resre.match(line):
+            _, _, _, ws, ds, ls, _ = wdlre.split(line)
+            w = int(ws)
+            d = int(ds)
+            l = int(ls)
+            break
     if w is None:
         return None
     return w, d, l
