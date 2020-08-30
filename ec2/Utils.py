@@ -1,3 +1,4 @@
+from math import sqrt
 import numpy as np
 
 '''
@@ -40,5 +41,26 @@ class Statistics:
             'dim_abs': self.dim_abs.tolist(),
             'tot_abs': self.tot_abs
         }
+
+'''
+A class to estimate statistics of a gaussian distribution
+Can be used for example to estimate the timeout of the game playing
+'''
+class Gauss:
+    def __init__(self):
+        self.n = 0
+        self.s1 = 0
+        self.s2 = 0
+
+    def add(self, v):
+        self.n += 1
+        self.s1 += v
+        self.s2 += v * v
+
+    def mean(self):
+        return self.s1 / self.n
+
+    def std(self):
+        return sqrt((self.s2 - self.s1 * self.s1 / self.n) / self.n)
 
 # vim: tabstop=4 shiftwidth=4 expandtab

@@ -1,3 +1,4 @@
+import datetime
 import random
 import math
 import subprocess
@@ -6,6 +7,8 @@ import os
 import os.path
 import shutil
 import concurrent.futures
+
+from Utils import Gauss
 
 eps0 = 1e-2
 eps1 = 1 - eps0
@@ -47,6 +50,9 @@ def copy_base_file(config):
 def random_skip(pgnlen, games):
     return random.randint(0, pgnlen - games + 1)
 
+# We will estimate the timeout based on observed game durations
+gauss = Gauss()
+
 # Play a match with a given number of games between 2 param sets
 # Player 1 is theta+ or the candidate
 # Player 2 is theta- or the base param set
@@ -71,30 +77,39 @@ def play(config, tp, tm=None):
         args.extend(['-n', str(config.nodes)])
     games = config.play_chunk or config.games // config.parallel
     total_starts = config.games // games
-    print('Play: starting', total_starts, 'times with', games, 'games each')
 
-    # Play the games in parallel, then collect and consolidate the results
+    # Calculate the timeout:
+    if gauss.n == 0:
+        timeout = 60 * games
+    else:
+        timeout = int(gauss.mean() + 3 * gauss.std())
+
+    print('Play: starting', total_starts, 'times with', games, 'games each, timeout =', timeout)
+
+    # Play the games in parallel, collecting and consolidating the results
     w, d, l = 0, 0, 0
     succ_starts = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
         while total_starts > succ_starts:
             to_start = total_starts - succ_starts
-            executions = [ pool.submit(play_one, config, list(args), games) for _ in range(to_start) ]
+            executions = [ pool.submit(play_one, config, list(args), games, timeout=timeout) for _ in range(to_start) ]
             for future in concurrent.futures.as_completed(executions):
-                try:
-                    data = future.result()
-                except Exception as exc:
-                    print('Exception in one game thread:', exc)
+                data = future.result()
+                if 'exception' in data:
+                    print('Exception in one game thread:', data['exception'])
+                elif 'timeout' in data:
+                    print('Timeout in one game thread:', timeout)
+                elif 'incomplete' in data:
+                    print('No result from game thread')
                 else:
-                    if data is None:
-                        print('No result from game thread')
-                    else:
-                        succ_starts += 1
-                        w1, d1, l1 = data
-                        print('Partial play result: {} {} {}\t(remaining: {})'.format(w1, d1, l1, total_starts - succ_starts))
-                        w += w1
-                        d += d1
-                        l += l1
+                    succ_starts += 1
+                    dt = data['duration']
+                    gauss.add(dt)
+                    w1, d1, l1 = data['result']
+                    print('Partial play result: {} {} {}\t({} seconds, remaining games: {})'.format(w1, d1, l1, int(dt), total_starts - succ_starts))
+                    w += w1
+                    d += d1
+                    l += l1
     if w + d + l == 0:
         print('Play: No result from self play')
         return 0
@@ -112,17 +127,26 @@ def play_one(config, args, games, timeout=360):
     # print(args)
     w = None
     # For windows: shell=True to hide the window of the child process - seems not to be necessary!
-    status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
-    for line in status.stdout.splitlines():
-        #print('Line:', line)
-        if resre.match(line):
-            _, _, _, ws, ds, ls, _ = wdlre.split(line)
-            w = int(ws)
-            d = int(ds)
-            l = int(ls)
-            break
-    if w is None:
-        return None
-    return w, d, l
+    try:
+        starttime = datetime.datetime.now()
+        status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return { 'timeout': True }
+    except Exception as exc:
+        return { 'exception': exc }
+    else:
+        endtime = datetime.datetime.now()
+        dt = endtime - starttime
+        for line in status.stdout.splitlines():
+            #print('Line:', line)
+            if resre.match(line):
+                _, _, _, ws, ds, ls, _ = wdlre.split(line)
+                w = int(ws)
+                d = int(ds)
+                l = int(ls)
+                break
+        if w is None:
+            return { 'incomplete': True }
+        return { 'result': (w, d, l), 'duration': dt.total_seconds() }
 
 # vim: tabstop=4 shiftwidth=4 expandtab
