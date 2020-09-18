@@ -82,7 +82,7 @@ def play(config, tp, tm=None):
     if gauss.n == 0:
         timeout = 60 * games
     else:
-        timeout = int(gauss.mean() + 3 * gauss.std())
+        timeout = int(gauss.mean() + 4 * gauss.std())
 
     print('Play: starting', total_starts, 'times with', games, 'games each, timeout =', timeout)
 
@@ -98,6 +98,9 @@ def play(config, tp, tm=None):
                 if 'exception' in data:
                     print('Exception in one game thread:', data['exception'])
                 elif 'timeout' in data:
+                    # We add the timeout as a datapoint, otherwise will this duration not be
+                    # reflected in the statistics
+                    gauss.add(timeout)
                     print('Timeout in one game thread:', timeout)
                 elif 'incomplete' in data:
                     print('No result from game thread')

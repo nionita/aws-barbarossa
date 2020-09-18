@@ -1,4 +1,5 @@
-from skopt import Optimizer, expected_minimum
+from skopt import Optimizer
+from skopt.utils import expected_minimum
 from skopt.space import Integer
 # from sklearn.externals.joblib import Parallel, delayed
 
@@ -34,11 +35,12 @@ class BayesOptimizer:
         # print('Initial', x0, 'dims', dimensions)
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration
-        n_initial_points = max(self.msteps // 10, len(dimensions))
+        n_initial_points = max(self.msteps // 10, len(dimensions) + 1)
         self.optimizer = Optimizer(
                 dimensions=dimensions,
                 base_estimator=config.regressor,
-                n_initial_points=n_initial_points)
+                n_initial_points=n_initial_points,
+                model_queue_size=2)
         self.done = False
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
@@ -94,7 +96,10 @@ class BayesOptimizer:
             return self.theta
         else:
             print('Best taken from expected maximum')
-            xm, _ = expected_minimum(last)
+            xm, ym = expected_minimum(last)
+            print('Best expected x:', xm)
+            # Because we maximize: negate!
+            print('Best expected y:', -ym)
             return xm
 
     def step_ask_tell(self):
