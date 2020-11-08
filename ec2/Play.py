@@ -102,6 +102,8 @@ def play(config, tp, tm=None):
                     # reflected in the statistics
                     gauss.add(timeout)
                     print('Timeout in one game thread:', timeout)
+                    print('Standard output:', data['stdout'])
+                    print('Standard error:', data['stderr'])
                 elif 'incomplete' in data:
                     print('No result from game thread')
                 else:
@@ -133,8 +135,8 @@ def play_one(config, args, games, timeout=360):
     try:
         starttime = datetime.datetime.now()
         status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return { 'timeout': True }
+    except subprocess.TimeoutExpired as toe:
+        return { 'timeout': True, 'stdout': toe.stdout, 'stderr': toe.stderr }
     except Exception as exc:
         return { 'exception': exc }
     else:
