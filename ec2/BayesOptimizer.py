@@ -39,6 +39,7 @@ class BayesOptimizer:
         self.optimizer = Optimizer(
                 dimensions=dimensions,
                 base_estimator=config.regressor,
+                acq_func=config.acq_func,
                 n_initial_points=n_initial_points,
                 model_queue_size=2)
         self.done = False

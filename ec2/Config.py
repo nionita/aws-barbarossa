@@ -23,14 +23,18 @@ msteps: 10
 
 [params]
 # Section params defines the parameters to be optimized (can be empty or not appear at all)
-# with param name, starting value and scale
+# with param name, starting value and scale (name + 2 values)
+# For bayesian optimization it should be: param name, minimum, starting and maximum value
+# (name + 3 values)
 epMovingMid:  156, 3
 epMovingEnd:  156, 3
 epMaterMinor: 1, 1
 
 [weights]
 # Section weights defines the weights to be optimized (can be empty or not appear at all)
-# with param name, starting mid game value, starting end game value, and scale
+# with param name, starting mid game value, starting end game value, and scale (name + 3 values)
+# For bayesian optimization it should be: param name, mid minimum, mid starting and mid maximum value,
+# end minimum, end starting and end maximum value (name + 6 values)
 kingSafe: 1, 0, 1
 kingOpen: 2, 4, 1
 kingPlaceCent: 8, 1, 1
@@ -43,6 +47,7 @@ class Config:
         'name': 'S',
         'method': ('S', 'Bayes'),
         'regressor': ('S', 'GP'),
+        'acq_func': ('S', 'EI'),    # Could be LCB, EI, gp_hedge and some others
         'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
         'selfplay': 'S',

@@ -102,8 +102,10 @@ def play(config, tp, tm=None):
                     # reflected in the statistics
                     gauss.add(timeout)
                     print('Timeout in one game thread:', timeout)
-                    print('Standard output:', data['stdout'])
-                    print('Standard error:', data['stderr'])
+                    if data['stdout']:
+                        print('Standard output:', data['stdout'])
+                    if data['stderr']:
+                        print('Standard error:', data['stderr'])
                 elif 'incomplete' in data:
                     print('No result from game thread')
                 else:
