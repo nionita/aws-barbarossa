@@ -1,13 +1,14 @@
+import numpy as np
 from skopt import Optimizer
 from skopt.utils import expected_minimum
 from skopt.space import Integer
-# from sklearn.externals.joblib import Parallel, delayed
-
-# Bayes optimization with Skopt
-# We have to optimize a stochastic function of n integer parameters,
-# but we can only get noisy results from measurements
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, WhiteKernel
 
 '''
+Bayes optimization with Skopt
+We have to optimize a stochastic function of n integer parameters,
+but we can only get noisy results from measurements
 '''
 class BayesOptimizer:
     def __init__(self, config, f, save=None, status=None):
@@ -32,14 +33,30 @@ class BayesOptimizer:
             for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
                 x0.append(pi)
                 dimensions.append(Integer(si, ei))
-        # print('Initial', x0, 'dims', dimensions)
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration
         n_initial_points = max(self.msteps // 10, len(dimensions) + 1)
+        self.is_gp = False
+        if config.regressor == 'GP':
+            self.is_gp = True
+            # GPR with Matern isotropic kernel and white noise
+            # nu=1.5 (once differentiable functions)
+            # An anisotropic kernel would be slightly better, but we have much more hyperparameters,
+            # which makes the fit worse (for a given number of samples)
+            kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
+                     + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1))
+            # We put alpha=0 because we count in the kernel for the noise
+            # n_restarts_optimizer is important to find a good fit! (but it costs time)
+            rgr = GaussianProcessRegressor(kernel=kernel, alpha=0.0, n_restarts_optimizer=5)
+        else:
+            rgr = config.regressor
         self.optimizer = Optimizer(
                 dimensions=dimensions,
-                base_estimator=config.regressor,
+                base_estimator=rgr,
                 acq_func=config.acq_func,
+                acq_optimizer='sampling',   # without this I got this error:
+                                            # grad = self.kernel_.gradient_x(X[0], self.X_train_)
+                                            # AttributeError: 'Sum' object has no attribute 'gradient_x'
                 n_initial_points=n_initial_points,
                 model_queue_size=2)
         self.done = False
@@ -122,6 +139,12 @@ class BayesOptimizer:
             self.theta = self.xi[-1]
             self.best = last
         print('Theta / value:', self.theta, '/', self.best)
+        if self.is_gp and len(self.optimizer.models) > 0:
+            rgr = self.optimizer.models[-1]
+            if hasattr(rgr, 'kernel_'):
+                print('Kernel:', rgr.kernel_)
+            if hasattr(rgr, 'log_marginal_likelihood_value_'):
+                print('LML value:', rgr.log_marginal_likelihood_value_)
         self.step += 1
         return res
 
