@@ -33,9 +33,6 @@ class BayesOptimizer:
             for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
                 x0.append(pi)
                 dimensions.append(Integer(si, ei))
-        # When we start to use the regressor, we should have enough random points
-        # for a good space exploration
-        n_initial_points = max(self.msteps // 10, len(dimensions) + 1)
         self.is_gp = False
         if config.regressor == 'GP':
             self.is_gp = True
@@ -47,9 +44,15 @@ class BayesOptimizer:
                      + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1))
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
-            rgr = GaussianProcessRegressor(kernel=kernel, alpha=0.0, n_restarts_optimizer=5)
+            rgr = GaussianProcessRegressor(kernel=kernel, alpha=0.0, n_restarts_optimizer=config.ropoints)
         else:
             rgr = config.regressor
+        # When we start to use the regressor, we should have enough random points
+        # for a good space exploration
+        if config.isteps == 0:
+            n_initial_points = max(self.msteps // 10, len(dimensions) + 1)
+        else:
+            n_initial_points = config.isteps
         self.optimizer = Optimizer(
                 dimensions=dimensions,
                 base_estimator=rgr,

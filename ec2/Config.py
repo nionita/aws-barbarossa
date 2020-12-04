@@ -60,11 +60,13 @@ class Config:
         'laststep': ('F', 0.1),
         'alpha': ('F', 0.501),
         'beta': 'F',
-        'msteps': ('I', 1000),
+        'msteps': ('I', 1000),  # number of optimizing steps
+        'isteps': ('I', 0),     # number of initial steps for GP
+        'ropoints': ('I', 5),   # number of restart optimizer points for GP
         'rend': 'I',
         'save': ('I', 10),
-        'parallel': ('I', 1),
-        'play_chunk': 'I'
+        'parallel': ('I', 1),   # number of parallel playing games
+        'play_chunk': 'I'       # number of games played in a chunk
     }
 
     mandatory_fields = ['name', 'selfplay', 'ipgnfile', 'ipgnlen']
