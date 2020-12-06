@@ -3,7 +3,7 @@ from skopt import Optimizer
 from skopt.utils import expected_minimum
 from skopt.space import Integer
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, WhiteKernel
+from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
 '''
 Bayes optimization with Skopt
@@ -36,12 +36,13 @@ class BayesOptimizer:
         self.is_gp = False
         if config.regressor == 'GP':
             self.is_gp = True
-            # GPR with Matern isotropic kernel and white noise
-            # nu=1.5 (once differentiable functions)
-            # An anisotropic kernel would be slightly better, but we have much more hyperparameters,
-            # which makes the fit worse (for a given number of samples)
+            # GPR with Matern isotropic kernel, white noise and a constant kernel for mean estimatation
+            # Matern default nu=1.5 (once differentiable functions)
+            # An anisotropic kernel could be slightly better, but we have much more hyperparameters,
+            # which maybe makes the fit worse (for a given number of samples)
             kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
-                     + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1))
+                     + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
+                     + ConstantKernel()
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
             rgr = GaussianProcessRegressor(kernel=kernel, alpha=0.0, n_restarts_optimizer=config.ropoints)
