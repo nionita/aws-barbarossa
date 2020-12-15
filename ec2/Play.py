@@ -7,6 +7,7 @@ import os
 import os.path
 import shutil
 import concurrent.futures
+from concurrent.futures import FIRST_COMPLETED
 
 from Utils import Gauss
 
@@ -88,35 +89,43 @@ def play(config, tp, tm=None):
 
     # Play the games in parallel, collecting and consolidating the results
     w, d, l = 0, 0, 0
-    succ_starts = 0
+    succ_ends = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
-        while total_starts > succ_starts:
-            to_start = total_starts - succ_starts
-            executions = [ pool.submit(play_one, config, list(args), games, timeout=timeout) for _ in range(to_start) ]
-            for future in concurrent.futures.as_completed(executions):
+        pending = set([pool.submit(play_one, config, list(args), games, timeout=timeout, id=i) for i in range(total_starts)])
+        cid = total_starts
+        while len(pending) > 0:
+            done, not_done = concurrent.futures.wait(pending, return_when=FIRST_COMPLETED)
+            new_starts = set()
+            for future in done:
+                success = False
                 data = future.result()
                 if 'exception' in data:
-                    print('Exception in one game thread:', data['exception'])
+                    print('Exception in game thread {}: {}'.format(data['id'], data['exception']))
                 elif 'timeout' in data:
                     # We add the timeout as a datapoint, otherwise will this duration not be
                     # reflected in the statistics
                     gauss.add(timeout)
-                    print('Timeout in one game thread:', timeout)
+                    print('Timeout in game thread {} ({})'.format(data['id'], timeout))
                     if data['stdout']:
                         print('Standard output:', data['stdout'])
                     if data['stderr']:
                         print('Standard error:', data['stderr'])
                 elif 'incomplete' in data:
-                    print('No result from game thread')
+                    print('No result from game thread {}'.format(data['id']))
                 else:
-                    succ_starts += 1
+                    success = True
+                    succ_ends += 1
                     dt = data['duration']
                     gauss.add(dt)
                     w1, d1, l1 = data['result']
-                    print('Partial play result: {} {} {}\t({} seconds, remaining games: {})'.format(w1, d1, l1, int(dt), total_starts - succ_starts))
+                    print('Partial play result {}: {} {} {}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
                     w += w1
                     d += d1
                     l += l1
+                if not success:
+                    new_starts.add(pool.submit(play_one, config, list(args), games, timeout=timeout, id=cid))
+                    cid += 1
+            pending = not_done | new_starts
     if w + d + l == 0:
         print('Play: No result from self play')
         return 0
@@ -127,7 +136,7 @@ def play(config, tp, tm=None):
 # The timeout (in seconds?) is taken for 10 games with 20000 nodes
 # and may be wrong for longer games
 # We should keep statistics for current configuration and use them (with some margin)
-def play_one(config, args, games, timeout=360):
+def play_one(config, args, games, timeout=360, id=0):
     skip = random_skip(config.ipgnlen, games)
     args.extend(['-s', str(skip), '-f', str(games)])
     # print('Will start:')
@@ -138,9 +147,9 @@ def play_one(config, args, games, timeout=360):
         starttime = datetime.datetime.now()
         status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as toe:
-        return { 'timeout': True, 'stdout': toe.stdout, 'stderr': toe.stderr }
+        return { 'id': id, 'timeout': True, 'stdout': toe.stdout, 'stderr': toe.stderr }
     except Exception as exc:
-        return { 'exception': exc }
+        return { 'id': id, 'exception': exc }
     else:
         endtime = datetime.datetime.now()
         dt = endtime - starttime
@@ -153,7 +162,7 @@ def play_one(config, args, games, timeout=360):
                 l = int(ls)
                 break
         if w is None:
-            return { 'incomplete': True }
-        return { 'result': (w, d, l), 'duration': dt.total_seconds() }
+            return { 'id': id, 'incomplete': True }
+        return { 'id': id, 'result': (w, d, l), 'duration': dt.total_seconds() }
 
 # vim: tabstop=4 shiftwidth=4 expandtab
