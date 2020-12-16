@@ -118,7 +118,7 @@ def play(config, tp, tm=None):
                     dt = data['duration']
                     gauss.add(dt)
                     w1, d1, l1 = data['result']
-                    print('Partial play result {}: {} {} {}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
+                    print('Partial result {:2d}: {:2d} {:2d} {:2d}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
                     w += w1
                     d += d1
                     l += l1
