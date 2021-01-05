@@ -23,16 +23,17 @@ class BayesOptimizer:
         dimensions = []
         x0 = []
         assert type(config.pscale) == list or type(config.pmin) == list and type(config.pmax) == list
+        transform_x = 'normalize' if 'X' in config.normalize else 'identity'
         if type(config.pscale) == list:
             for pi, si in zip(config.pinits, config.pscale):
                 x0.append(pi)
                 start = pi - si
                 end   = pi + si
-                dimensions.append(Integer(start, end))
+                dimensions.append(Integer(start, end, transform=transform_x))
         else:
             for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
                 x0.append(pi)
-                dimensions.append(Integer(si, ei))
+                dimensions.append(Integer(si, ei, transform=transform_x))
         self.is_gp = False
         if config.regressor == 'GP':
             self.is_gp = True
@@ -43,9 +44,15 @@ class BayesOptimizer:
             kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
                      + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
                      + ConstantKernel()
+            # Y normalization
+            # GP assumes mean 0, or otherwise normalize, which seems not to work well,
+            # as the sample mean should be taken only for random points
+            # We could calculate the mean ourselves from the initial random points
+            normalize_y = 'Y' in config.normalize
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
-            rgr = GaussianProcessRegressor(kernel=kernel, alpha=0.0, n_restarts_optimizer=config.ropoints)
+            rgr = GaussianProcessRegressor(kernel=kernel,
+                    alpha=0.0, normalize_y=normalize_y, n_restarts_optimizer=config.ropoints)
         else:
             rgr = config.regressor
         # When we start to use the regressor, we should have enough random points
