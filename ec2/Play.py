@@ -9,7 +9,7 @@ import shutil
 import concurrent.futures
 from concurrent.futures import FIRST_COMPLETED
 
-from Utils import Gauss
+from Utils import Expo
 
 eps0 = 1e-2
 eps1 = 1 - eps0
@@ -52,7 +52,10 @@ def random_skip(pgnlen, games):
     return random.randint(0, pgnlen - games + 1)
 
 # We will estimate the timeout based on observed game durations
-gauss = Gauss()
+# The timeout will be calculated such that a given fraction of the games
+# will terminate normally (i.e. not discarded via timeout) - probaq
+expo = Expo()
+probaq = 0.98
 
 # Play a match with a given number of games between 2 param sets
 # Player 1 is theta+ or the candidate
@@ -80,10 +83,10 @@ def play(config, tp, tm=None):
     total_starts = config.games // games
 
     # Calculate the timeout:
-    if gauss.n == 0:
+    if expo.n == 0:
         timeout = 60 * games
     else:
-        timeout = int(gauss.mean() + 4 * gauss.std())
+        timeout = int(expo.quantile(probaq))
 
     print('Play: starting', total_starts, 'times with', games, 'games each, timeout =', timeout)
 
@@ -102,9 +105,11 @@ def play(config, tp, tm=None):
                 if 'exception' in data:
                     print('Exception in game thread {}: {}'.format(data['id'], data['exception']))
                 elif 'timeout' in data:
-                    # We add the timeout as a datapoint, otherwise will this duration not be
+                    # We add the timeout as a datapoint, otherwise this duration is not
                     # reflected in the statistics
-                    gauss.add(timeout)
+                    # This still cuts the long tail of the exponential distribution, but on the other
+                    # side, we must account for games which would take forever - a compensation
+                    expo.add(timeout)
                     print('Timeout in game thread {} ({})'.format(data['id'], timeout))
                     if data['stdout']:
                         print('Standard output:', data['stdout'])
@@ -116,7 +121,7 @@ def play(config, tp, tm=None):
                     success = True
                     succ_ends += 1
                     dt = data['duration']
-                    gauss.add(dt)
+                    expo.add(dt)
                     w1, d1, l1 = data['result']
                     print('Partial result {:2d}: {:2d} {:2d} {:2d}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
                     w += w1

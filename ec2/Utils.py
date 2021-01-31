@@ -1,5 +1,6 @@
 from math import sqrt
 import numpy as np
+import math
 
 '''
 A class to collect statistics about the evolution of the dimensions during optimisation.
@@ -62,5 +63,24 @@ class Gauss:
 
     def std(self):
         return sqrt((self.s2 - self.s1 * self.s1 / self.n) / self.n)
+
+'''
+Game duration is modelled as an exponential distribution, where lambda is the frequence
+of games terminated in unit of time, i.e. 1/lambda is game duration (and standard deviation
+at the same time)
+
+Then we are interested in the quantile for some percent of games beeing terminated normally
+(i.e. not through a timeout)
+'''
+class Expo(Gauss):
+    def quantile(self, p):
+        return -self.mean() * math.log(1 - p)
+
+if __name__ == '__main__':
+    ex = Expo()
+    for t in (452, 393, 379, 406, 442, 373):
+        ex.add(t)
+    print('95%:', ex.quantile(0.95))
+    print('98%:', ex.quantile(0.98))
 
 # vim: tabstop=4 shiftwidth=4 expandtab
