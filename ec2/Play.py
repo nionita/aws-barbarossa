@@ -9,10 +9,18 @@ import shutil
 import concurrent.futures
 from concurrent.futures import FIRST_COMPLETED
 
-from Utils import Expo
+from Utils import TimeEstimator
 
+# Some constants
+# To calculate Elo differences from game results
 eps0 = 1e-2
 eps1 = 1 - eps0
+
+# To calculate node numbers for timeouts
+# For 20000 nodes we need ~50 seconds in 10 games
+nodes_depth_1 = 200
+branching_factor = 2
+nodes_constant = 4000
 
 '''
 Transforming mean result in an elo difference involves the constants log(10) and 400,
@@ -52,10 +60,7 @@ def random_skip(pgnlen, games):
     return random.randint(0, pgnlen - games + 1)
 
 # We will estimate the timeout based on observed game durations
-# The timeout will be calculated such that a given fraction of the games
-# will terminate normally (i.e. not discarded via timeout) - probaq
-expo = Expo()
-probaq = 0.98
+timeEst = TimeEstimator()
 
 # Play a match with a given number of games between 2 param sets
 # Player 1 is theta+ or the candidate
@@ -83,12 +88,20 @@ def play(config, tp, tm=None):
     total_starts = config.games // games
 
     # Calculate the timeout:
-    if expo.n == 0:
-        timeout = 60 * games
+    # This will be calculated based on nodes / move, everything empirical, of course
+    if config.nodes:
+        nodes = config.nodes
     else:
-        timeout = int(expo.quantile(probaq))
+        nodes = nodes_depth_1 * branching_factor ** config.depth
+    mu = nodes * games / nodes_constant
 
-    print('Play: starting', total_starts, 'times with', games, 'games each, timeout =', timeout)
+    # Initialize the time estimator - it is smart, and will remain initaialized between calls of play
+    timeEst.init(k = games, mu = mu)
+    timeout = int(timeEst.timeout())
+    endless = timeEst.get_endless_proba()
+
+    print('Play: starting', total_starts, 'times with', games, \
+            'games each, timeout =', timeout, 'endless proba =', endless)
 
     # Play the games in parallel, collecting and consolidating the results
     w, d, l = 0, 0, 0
@@ -105,11 +118,8 @@ def play(config, tp, tm=None):
                 if 'exception' in data:
                     print('Exception in game thread {}: {}'.format(data['id'], data['exception']))
                 elif 'timeout' in data:
-                    # We add the timeout as a datapoint, otherwise this duration is not
-                    # reflected in the statistics
-                    # This still cuts the long tail of the exponential distribution, but on the other
-                    # side, we must account for games which would take forever - a compensation
-                    expo.add(timeout)
+                    # The time duration estimator takes care of endless games
+                    timeEst.aborted(timeout)
                     print('Timeout in game thread {} ({})'.format(data['id'], timeout))
                     if data['stdout']:
                         print('Standard output:', data['stdout'])
@@ -121,16 +131,23 @@ def play(config, tp, tm=None):
                     success = True
                     succ_ends += 1
                     dt = data['duration']
-                    expo.add(dt)
+                    timeEst.normal(dt)
                     w1, d1, l1 = data['result']
                     print('Partial result {:2d}: {:2d} {:2d} {:2d}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
                     w += w1
                     d += d1
                     l += l1
                 if not success:
+                    # We get an updated timeout, which should be better than the older
+                    timeout = int(timeEst.timeout())
                     new_starts.add(pool.submit(play_one, config, list(args), games, timeout=timeout, id=cid))
                     cid += 1
             pending = not_done | new_starts
+    # Get the messages from time estimator and print them
+    ms = timeEst.get_messages()
+    for mes in ms:
+        print('Time estimator:', mes)
+
     if w + d + l == 0:
         print('Play: No result from self play')
         return 0
