@@ -23,10 +23,16 @@ branching_factor = 2
 nodes_constant = 4000
 
 '''
-Transforming mean result in an elo difference involves the constants log(10) and 400,
-but at the end those are multiplicative, so it is just a matter of step size
-Here frac is between 0 and 1, exclusive! More than 0.5 means the first player is better
-We have guards for very excentric results, eps0 and eps1, which also limit the gradient amplitude:
+Transforming a result in an elo difference - here frac is in the open interval (0, 1).
+More than 0.5 means the first player is better.
+We must have guards (eps0, eps1) for the excentric results 0 and 1, which can occur for a few games
+'''
+def elo(frac):
+    frac = max(eps0, min(eps1, frac))
+    return 400 * math.log10(frac / (1 - frac))
+
+'''
+The old function is essentially the same, but on a different scale
 '''
 def elowish(frac):
     frac = max(eps0, min(eps1, frac))
@@ -107,7 +113,8 @@ def play(config, tp, tm=None):
     w, d, l = 0, 0, 0
     succ_ends = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
-        pending = set([pool.submit(play_one, config, list(args), games, timeout=timeout, id=i) for i in range(total_starts)])
+        pending = set([pool.submit(play_one, config, list(args), games, timeout=timeout, id=i) \
+                          for i in range(total_starts)])
         cid = total_starts
         while len(pending) > 0:
             done, not_done = concurrent.futures.wait(pending, return_when=FIRST_COMPLETED)
@@ -118,6 +125,7 @@ def play(config, tp, tm=None):
                 if 'exception' in data:
                     print('Exception in game thread {}: {}'.format(data['id'], data['exception']))
                 elif 'timeout' in data:
+                    timeout = data['timeout']
                     # The time duration estimator takes care of endless games
                     timeEst.aborted(timeout)
                     print('Timeout in game thread {} ({})'.format(data['id'], timeout))
@@ -133,7 +141,9 @@ def play(config, tp, tm=None):
                     dt = data['duration']
                     timeEst.normal(dt)
                     w1, d1, l1 = data['result']
-                    print('Partial result {:2d}: {:2d} {:2d} {:2d}\t({} seconds, remaining games: {})'.format(data['id'], w1, d1, l1, int(dt), total_starts - succ_ends))
+                    s1 = 'Partial result {:3d}: {:2d} {:2d} {:2d}'.format(data['id'], w1, d1, l1)
+                    s2 = '({} seconds, remaining chunks: {})'.format(int(dt), total_starts - succ_ends)
+                    print(s1, '\t', s2)
                     w += w1
                     d += d1
                     l += l1
@@ -153,7 +163,10 @@ def play(config, tp, tm=None):
         return 0
     else:
         print('Play:', w, d, l)
-        return elowish((w + 0.5 * d) / (w + d + l))
+        if config.elo:
+            return elo((w + 0.5 * d) / (w + d + l))
+        else:
+            return elowish((w + 0.5 * d) / (w + d + l))
 
 # The timeout (in seconds?) is taken for 10 games with 20000 nodes
 # and may be wrong for longer games
@@ -167,9 +180,10 @@ def play_one(config, args, games, timeout=360, id=0):
     # For windows: shell=True to hide the window of the child process - seems not to be necessary!
     try:
         starttime = datetime.datetime.now()
-        status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=timeout)
+        status = subprocess.run(args, capture_output=True, cwd=config.playdir, \
+                                text=True, timeout=timeout)
     except subprocess.TimeoutExpired as toe:
-        return { 'id': id, 'timeout': True, 'stdout': toe.stdout, 'stderr': toe.stderr }
+        return { 'id': id, 'timeout': timeout, 'stdout': toe.stdout, 'stderr': toe.stderr }
     except Exception as exc:
         return { 'id': id, 'exception': exc }
     else:

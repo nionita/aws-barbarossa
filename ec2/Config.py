@@ -48,7 +48,8 @@ class Config:
         'method': ('S', 'Bayes'),
         'regressor': ('S', 'GP'),
         'acq_func': ('S', 'EI'),    # Could be LCB, EI, gp_hedge and some others
-        'normalize': ('S', ''), # normalization for Bayes GP: '', 'X', 'Y' or 'XY'
+        'normalize': ('S', ''),     # normalization for Bayes GP: '', 'X', 'Y' or 'XY'
+        'elo': ('I', 0),            # Play result in Elo difference (default: elowish)
         'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
         'selfplay': 'S',
