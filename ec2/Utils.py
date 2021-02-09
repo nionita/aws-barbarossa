@@ -127,8 +127,7 @@ class TimeEstimator():
             edur = timeout + self.__mean()
             if self.debug:
                 self.messages.append('Estimated duration of timeout game: {}'.format(edur))
-            # This must be corrected with the probability that we
-            # did not abort an endless game
+            # This must be corrected: we might have aborted an endless game
             ced = self.__correct_aborted_game_duration(edur)
             if self.debug:
                 self.messages.append('Corrected estimated duration of timeout game: {}'.format(ced))
@@ -141,7 +140,7 @@ class TimeEstimator():
     # or a fraction of the previous one, if not (kind of estimate...)
     def __adjust_q(self):
         pq = self.timeouts / self.n
-        if pq > self.probto:
+        if pq >= self.probto:
             self.q = pq - self.probto
         else:
             self.q = self.q * qdecay
@@ -150,8 +149,8 @@ class TimeEstimator():
 
     '''
     Given estimated duration t, find x such that:
-    - with prob q / (p + q): mean = s1 / n, i.e. aborted endless games do not affect statistics
-    - with prob p / (p + q): mean = (s1 + t) / (n + 1), i.e. add estimated duration
+    - with prob q / (p + q): mean = s / n, i.e. aborted endless games do not affect statistics
+    - with prob p / (p + q): mean = (s + t) / (n + 1), i.e. add estimated duration
     So we add always, but a corrected estimated duration
     If the timeout happens on the very first chunk played, the calculation simplifies a bit
     '''
@@ -179,29 +178,28 @@ class TimeEstimator():
         with self.__lock:
             return self.q
 
-    def __solver(self, x):
-        return self.__calc_p(x) - self.probto
+    def get_total_timeouts(self):
+        self.__check_inited()
+        with self.__lock:
+            return self.timeouts
 
     '''
     Calculate timeout iterative by doubling and halving intervals
     We want timeout(p0) when we know p(timeout) = p0
-    Out equation is: p(timeout) - p0 = 0, where 0 < p0 < 1
+    Our equation is: p(timeout) - p0 = 0, where 0 < p0 < 1
     So we want the root of f(x) = p(x) - p0
 
     Let's take a = 0; we know: p(0) = 1 (we timeout for sure when we set timeout to 0)
     That means: f(a) = 1 - p0 > 0
-    Then we set b = self.mean() increase b as long as f(b) > 0 (updating a to keep up)
-    When we found b such that f(b) < 0, and we have f(a) > 0 and f(b) < 0
-    And now we can halve the interval ro find the root with some precision
+    Then we set b = self.mean() and as long as f(b) > 0, double b
+    When we stop, we have f(a) > 0 and f(b) < 0
+    Now we can halve the interval to find the root with some precision
     
     This could be further optimized, e.g. instead of halving:
 
     c = (b * fa - a * fb) / (fa - fb)
 
     where we already considered the negative sign of fb
-
-    Another idea: keep the maximum chunk length which ended normally so far
-    and let timeout never be under that value
     '''
     def __timeout(self):
         a = 0
@@ -232,6 +230,9 @@ class TimeEstimator():
 #        t1 = t0 - (self.__calc_p(t0) - self.probto) / self.__calc_p_der(t0)
 #        return t1
 
+    def __solver(self, x):
+        return self.__calc_p(x) - self.probto
+
     '''
     Calculate the error function for the Erlang CDF
     (siehe https://en.wikipedia.org/wiki/Erlang_distribution)
@@ -239,10 +240,10 @@ class TimeEstimator():
     '''
     def __calc_p(self, timeout):
         lx = timeout * self.k / self.__mean()
-        return exp(-lx) * self.sum(lx)
+        return exp(-lx) * self.__sum(lx)
 
     # This sum is needed for CDF and its derivative calculations
-    def sum(self, h):
+    def __sum(self, h):
         nif = 1 # factor 1 / n!
         hn = 1  # factor h ^ n
         s = 1   # sum value so far
@@ -260,7 +261,7 @@ class TimeEstimator():
 #    def __calc_p_der(self, timeout):
 #        lx  = timeout * self.k / self.__mean()
 #        elx = exp(-lx)
-#        slx = self.sum(lx)
+#        slx = self.__sum(lx)
 #        return elx * (-lx * slx + self.sumd(lx))
 #
 #    # The derivative of the sum relative to h

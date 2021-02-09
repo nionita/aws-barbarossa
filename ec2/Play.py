@@ -102,12 +102,19 @@ def play(config, tp, tm=None):
     mu = nodes * games / nodes_constant
 
     # Initialize the time estimator - it is smart, and will remain initaialized between calls of play
-    timeEst.init(k = games, mu = mu)
+    timeEst.init(k=games, mu=mu, probto=0.01)
     timeout = int(timeEst.timeout())
     endless = timeEst.get_endless_proba()
+    tto     = timeEst.get_total_timeouts()
 
     print('Play: starting', total_starts, 'times with', games, \
-            'games each, timeout =', timeout, 'endless proba =', endless)
+            'games each, timeout =', timeout, 'endless proba =', endless, \
+            'timeouts', tto)
+
+    # We could calculate the timeout individually before every chunk play by passing
+    # a callback to worker function (play_one) - but the timeout calculation is heavy, so
+    # we would have to define a kind of cache and cache expiration and calculate the
+    # timeout only e.g. every 10 steps
 
     # Play the games in parallel, collecting and consolidating the results
     w, d, l = 0, 0, 0
