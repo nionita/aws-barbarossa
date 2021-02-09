@@ -45,7 +45,6 @@ class Statistics:
 
 # Some constants
 eps = 1e-6
-qdecay = 0.95
 
 '''
 Single games duration is modelled as an exponential distribution, but in one chunk
@@ -77,7 +76,7 @@ class TimeEstimator():
                 self.mu = mu
                 self.timeouts = 0
                 self.probto = probto
-                self.q = 0.01
+                self.q = 0.0
                 self.messages = []
                 self.debug = debug
 
@@ -137,20 +136,20 @@ class TimeEstimator():
 
     # Adjust the probability of endless games: either the rest of the
     # sample abort probability, if it is greater than our timeout probability,
-    # or a fraction of the previous one, if not (kind of estimate...)
+    # or 0, if not
     def __adjust_q(self):
         pq = self.timeouts / self.n
-        if pq >= self.probto:
+        if pq > self.probto:
             self.q = pq - self.probto
         else:
-            self.q = self.q * qdecay
+            self.q = 0.0
         if self.debug:
             self.messages.append('New probability of endless games: {}'.format(self.q))
 
     '''
     Given estimated duration t, find x such that:
-    - with prob q / (p + q): mean = s / n, i.e. aborted endless games do not affect statistics
-    - with prob p / (p + q): mean = (s + t) / (n + 1), i.e. add estimated duration
+    - with probability q / (p + q): mean = s / n, i.e. aborted endless games do not affect statistics
+    - with probability p / (p + q): mean = (s + t) / (n + 1), i.e. add estimated duration
     So we add always, but a corrected estimated duration
     If the timeout happens on the very first chunk played, the calculation simplifies a bit
     '''
