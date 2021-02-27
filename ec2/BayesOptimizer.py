@@ -41,9 +41,15 @@ class BayesOptimizer:
             # Matern default nu=1.5 (once differentiable functions)
             # An anisotropic kernel could be slightly better, but we have much more hyperparameters,
             # which maybe makes the fit worse (for a given number of samples)
-            kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
-                     + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
-                     + ConstantKernel()
+            # When we normalize X, we need other limits for the kernel parameters
+            if 'X' in config.normalize:
+                kernel = 1.0 * Matern(length_scale=0.1, length_scale_bounds=(1e-2, 1e1)) \
+                         + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-6, 1e+0)) \
+                         + ConstantKernel()
+            else:
+                kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
+                         + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
+                         + ConstantKernel()
             # Y normalization
             # GP assumes mean 0, or otherwise normalize, which seems not to work well,
             # as the sample mean should be taken only for random points

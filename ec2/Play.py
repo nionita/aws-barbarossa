@@ -101,8 +101,8 @@ def play(config, tp, tm=None):
         nodes = nodes_depth_1 * branching_factor ** config.depth
     mu = nodes * games / nodes_constant
 
-    # Initialize the time estimator - it is smart, and will remain initaialized between calls of play
-    timeEst.init(k=games, mu=mu, probto=0.01)
+    # Initialize the time estimator - it will remain initialized between calls of play
+    timeEst.init(k=games, mu=mu, probto=config.probto)
     timeout = int(timeEst.timeout())
     endless = timeEst.get_endless_proba()
     tto     = timeEst.get_total_timeouts()

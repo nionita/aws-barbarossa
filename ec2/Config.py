@@ -50,6 +50,7 @@ class Config:
         'acq_func': ('S', 'EI'),    # Could be LCB, EI, gp_hedge and some others
         'normalize': ('S', ''),     # normalization for Bayes GP: '', 'X', 'Y' or 'XY'
         'elo': ('I', 0),            # Play result in Elo difference (default: elowish)
+        'probto': ('F', 0.01),      # Accepted probability of timeout in Play
         'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
         'selfplay': 'S',
