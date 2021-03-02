@@ -38,16 +38,16 @@ class BayesOptimizer:
         if config.regressor == 'GP':
             self.is_gp = True
             # GPR with Matern isotropic kernel, white noise and a constant kernel for mean estimatation
-            # Matern default nu=1.5 (once differentiable functions)
+            # Matern nu as config parameter (1.5 = once differentiable functions)
             # An anisotropic kernel could be slightly better, but we have much more hyperparameters,
-            # which maybe makes the fit worse (for a given number of samples)
+            # which may make the fit worse (for a given number of samples)
             # When we normalize X, we need other limits for the kernel parameters
             if 'X' in config.normalize:
-                kernel = 1.0 * Matern(length_scale=0.1, length_scale_bounds=(1e-2, 1e1)) \
+                kernel = 1.0 * Matern(nu=config.nu, length_scale=0.1, length_scale_bounds=(1e-2, 1e1)) \
                          + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-6, 1e+0)) \
                          + ConstantKernel()
             else:
-                kernel = 1.0 * Matern(length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
+                kernel = 1.0 * Matern(nu=config.nu, length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
                          + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
                          + ConstantKernel()
             # Y normalization
