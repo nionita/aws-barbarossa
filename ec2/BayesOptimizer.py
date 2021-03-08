@@ -23,38 +23,46 @@ class BayesOptimizer:
         dimensions = []
         x0 = []
         assert type(config.pscale) == list or type(config.pmin) == list and type(config.pmax) == list
-        transform_x = 'normalize' if 'X' in config.normalize else 'identity'
+        # Dimensions will be automatically normalized by skopt
+        # transform_x = 'normalize' if 'X' in config.normalize else 'identity'
         if type(config.pscale) == list:
             for pi, si in zip(config.pinits, config.pscale):
                 x0.append(pi)
                 start = pi - si
                 end   = pi + si
-                dimensions.append(Integer(start, end, transform=transform_x))
+                # dimensions.append(Integer(start, end, transform=transform_x))
+                dimensions.append(Integer(start, end))
         else:
             for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
                 x0.append(pi)
-                dimensions.append(Integer(si, ei, transform=transform_x))
+                # dimensions.append(Integer(si, ei, transform=transform_x))
+                dimensions.append(Integer(si, ei))
         self.is_gp = False
         if config.regressor == 'GP':
             self.is_gp = True
-            # GPR with Matern isotropic kernel, white noise and a constant kernel for mean estimatation
-            # Matern nu as config parameter (1.5 = once differentiable functions)
-            # An anisotropic kernel could be slightly better, but we have much more hyperparameters,
-            # which may make the fit worse (for a given number of samples)
-            # When we normalize X, we need other limits for the kernel parameters
-            if 'X' in config.normalize:
-                kernel = 1.0 * Matern(nu=config.nu, length_scale=0.1, length_scale_bounds=(1e-2, 1e1)) \
-                         + WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-6, 1e+0)) \
-                         + ConstantKernel()
-            else:
-                kernel = 1.0 * Matern(nu=config.nu, length_scale=1000, length_scale_bounds=(1e0, 1e4)) \
-                         + WhiteKernel(noise_level=1e-2, noise_level_bounds=(1e-4, 1e+1)) \
-                         + ConstantKernel()
-            # Y normalization
-            # GP assumes mean 0, or otherwise normalize, which seems not to work well,
-            # as the sample mean should be taken only for random points
-            # We could calculate the mean ourselves from the initial random points
+            # Y normalization: GP assumes mean 0, or otherwise normalize (which seems not to work well,
+            # as the sample mean should be taken only for random points - we could calculate the mean
+            # ourselves from the initial random points - not done for now)
             normalize_y = 'Y' in config.normalize
+            if config.elo and not normalize_y:
+                noise_level_bounds = (1e-2, 1e4)
+                noise_level = 10
+            else:
+                noise_level_bounds = (1e-6, 1e0)
+                noise_level = 0.01
+            # Length scales: because skopt normalizes the dimensions automatically, it is unclear
+            # how to proceed here, as the kernel does not know about that normalization...
+            length_scale_bounds = (1e-3, 1e4)
+            length_scale = 1
+            # Isotropic or anisotropic kernel
+            if not config.isotropic:
+                length_scale = length_scale * np.ones(len(dimensions))
+            # Matern kernel with configurable parameter nu (1.5 = once differentiable functions),
+            # white noise kernel and a constant kernel for mean estimatation
+            kernel = 1.0 * Matern(nu=config.nu, length_scale=length_scale, \
+                                  length_scale_bounds=length_scale_bounds) \
+                         + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
+                         + ConstantKernel()
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
             rgr = GaussianProcessRegressor(kernel=kernel,
@@ -125,6 +133,7 @@ class BayesOptimizer:
             if res:
                 last = res
             done = callback(self)
+        self.show_kernel()
         # Instead of returning the current best, we return the one that the model considers best
         if last is None or not last.models:
             print('No models to calculate the expected maximum')
@@ -142,10 +151,11 @@ class BayesOptimizer:
             self.done = True
             return None
         print('Step:', self.step)
+        self.show_kernel()
         x = self.optimizer.ask()
-        print('Params:', x)
+        print('Candidate:', x)
         y = self.func(self.config, x, self.base)
-        print('Result:', y)
+        print('Candidate / result:', x, '/', y)
         # The x returned by ask is of type [np.int32], so we have to cast it
         self.xi.append(list(map(int, x)))
         self.yi.append(y)
@@ -156,14 +166,16 @@ class BayesOptimizer:
             self.theta = self.xi[-1]
             self.best = last
         print('Theta / value:', self.theta, '/', self.best)
+        self.step += 1
+        return res
+
+    def show_kernel(self):
         if self.is_gp and len(self.optimizer.models) > 0:
             rgr = self.optimizer.models[-1]
             if hasattr(rgr, 'kernel_'):
                 print('Kernel:', rgr.kernel_)
             if hasattr(rgr, 'log_marginal_likelihood_value_'):
                 print('LML value:', rgr.log_marginal_likelihood_value_)
-        self.step += 1
-        return res
 
     def report(self, vec, title=None, file='report.txt'):
         if title is None:
