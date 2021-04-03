@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from skopt import Optimizer
 from skopt.utils import expected_minimum
@@ -43,13 +44,27 @@ class BayesOptimizer:
             # Y normalization: GP assumes mean 0, or otherwise normalize (which seems not to work well,
             # as the sample mean should be taken only for random points - we could calculate the mean
             # ourselves from the initial random points - not done for now)
+            # Yet is normalization the way to go...
             normalize_y = 'Y' in config.normalize
-            if config.elo and not normalize_y:
-                noise_level_bounds = (1e-2, 1e4)
-                noise_level = 10
+
+            # The noise level is fix in our case, as we play a fixed number of games per step
+            # (exception: initial / reference point, with noise = 0 - we ignore this)
+            # It depends of number of games per step and the loss function (elo/elowish)
+            # The formula below is an ELO error approximation for the confidence interval of 95%,
+            # which lies by about 2 sigma - we can compute sigma of the error
+            if config.fix_noise:
+                noise_level_bounds = 'fixed'
+                sigma = 250. / math.sqrt(config.games)
+                if not config.elo:
+                    sigma = sigma * math.log(10) / 400.
+                noise_level = sigma * sigma
             else:
-                noise_level_bounds = (1e-6, 1e0)
-                noise_level = 0.01
+                if config.elo and not normalize_y:
+                    noise_level_bounds = (1e-2, 1e4)
+                    noise_level = 10
+                else:
+                    noise_level_bounds = (1e-6, 1e0)
+                    noise_level = 0.01
             # Length scales: because skopt normalizes the dimensions automatically, it is unclear
             # how to proceed here, as the kernel does not know about that normalization...
             length_scale_bounds = (1e-3, 1e4)
@@ -59,10 +74,11 @@ class BayesOptimizer:
                 length_scale = length_scale * np.ones(len(dimensions))
             # Matern kernel with configurable parameter nu (1.5 = once differentiable functions),
             # white noise kernel and a constant kernel for mean estimatation
-            kernel = 1.0 * Matern(nu=config.nu, length_scale=length_scale, \
-                                  length_scale_bounds=length_scale_bounds) \
-                         + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
-                         + ConstantKernel()
+            kernel = \
+                  ConstantKernel() \
+                + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
+                + 1.0 * Matern(nu=config.nu, length_scale=length_scale, \
+                               length_scale_bounds=length_scale_bounds)
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
             rgr = GaussianProcessRegressor(kernel=kernel,
