@@ -71,7 +71,12 @@ timeEst = TimeEstimator()
 # Play a match with a given number of games between 2 param sets
 # Player 1 is theta+ or the candidate
 # Player 2 is theta- or the base param set
+# Even if we optimize in real parameter, play will round the parameters
 def play(config, tp, tm=None):
+    # If the parameters are real, convert them:
+    tp = list(map(round, tp))
+    if config.simul:
+        return rosenbrock(tp, config.simul)
     os.chdir(config.playdir)
     pla = config.name + '-playerp.cfg'
     with open(pla, 'w', encoding='utf-8') as plf:
@@ -82,6 +87,8 @@ def play(config, tp, tm=None):
             copy_base_file()
         base = base_file
     else:
+        # If the parameters are real, convert them:
+        tm = list(map(round, tm))
         base = config.name + '-playerm.cfg'
         with open(base, 'w', encoding='utf-8') as plf:
             for p, v in zip(config.pnames, tm):
@@ -207,5 +214,23 @@ def play_one(config, args, games, timeout=360, id=0):
         if w is None:
             return { 'id': id, 'incomplete': True }
         return { 'id': id, 'result': (w, d, l), 'duration': dt.total_seconds() }
+
+# Rosenbrock function for simulation
+# Fixed parameters:
+rose_a = 1.
+rose_b = 10.
+rose_offset = 0.
+
+# No noise yet
+# Global minimum of 0 at (rose_a, rose_a)
+# Must be inverted, as it has a minimum
+# We also give an Y offset and scale
+# So now global maximum of rose_offset * scale an (rose_a, rose_a)
+def rosenbrock(params, scale):
+    x, y = params[:2]
+    print('Rosenbrock with', x, y)
+    y2 = y - x * x
+    val = (rose_a - x) * (rose_a - x) + rose_b * y2 * y2
+    return (-val + rose_offset) * scale
 
 # vim: tabstop=4 shiftwidth=4 expandtab

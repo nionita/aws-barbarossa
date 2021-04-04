@@ -54,6 +54,8 @@ class Config:
         'probto': ('F', 0.01),      # Accepted probability of timeout in Play
         'nu': ('F', 1.5),           # Nu param for the Matern kernel when GP
         'fix_noise': ('I', 1),      # Fix the noise from number of games
+        'simul': ('F', 0.0),        # Simulation with rosenbrock: noise variance - 0: no simulation
+        'in_real': ('I', 0),        # Optimize in real parameters (default: integer)
         'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
         'selfplay': 'S',

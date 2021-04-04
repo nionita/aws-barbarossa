@@ -1,8 +1,11 @@
+import warnings
 import math
+import random
 import numpy as np
 from skopt import Optimizer
 from skopt.utils import expected_minimum
 from skopt.space import Integer
+from skopt.space import Real
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
@@ -19,25 +22,28 @@ class BayesOptimizer:
         # self.n_jobs = config.n_jobs
         self.save = save
         self.base = config.pinits
-        # All dimensions are integers in our case
+        # All dimensions are integers in our case, but we can optimize in real (more noise)
         # Here we will consider the scale as the +/- range from the initial value
         dimensions = []
         x0 = []
         assert type(config.pscale) == list or type(config.pmin) == list and type(config.pmax) == list
         # Dimensions will be automatically normalized by skopt
-        # transform_x = 'normalize' if 'X' in config.normalize else 'identity'
         if type(config.pscale) == list:
             for pi, si in zip(config.pinits, config.pscale):
                 x0.append(pi)
                 start = pi - si
                 end   = pi + si
-                # dimensions.append(Integer(start, end, transform=transform_x))
-                dimensions.append(Integer(start, end))
+                if config.in_real:
+                    dimensions.append(Real(start, end))
+                else:
+                    dimensions.append(Integer(start, end))
         else:
             for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
                 x0.append(pi)
-                # dimensions.append(Integer(si, ei, transform=transform_x))
-                dimensions.append(Integer(si, ei))
+                if config.in_real:
+                    dimensions.append(Real(si, ei))
+                else:
+                    dimensions.append(Integer(si, ei))
         self.is_gp = False
         if config.regressor == 'GP':
             self.is_gp = True
@@ -99,15 +105,24 @@ class BayesOptimizer:
                                             # grad = self.kernel_.gradient_x(X[0], self.X_train_)
                                             # AttributeError: 'Sum' object has no attribute 'gradient_x'
                 n_initial_points=n_initial_points,
+                initial_point_generator='lhs', # latin hypercube, just a try
+                n_jobs=-1,  # use all cores in the estimator
                 model_queue_size=2)
         self.done = False
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
-            self.theta = x0
-            self.best = 0
-            self.xi = [ x0 ]
-            self.yi = [ 0 ]
-            self.optimizer.tell(x0, 0)
+            # Unless we simulate!
+            if config.simul:
+                self.theta = None
+                self.best = None
+                self.xi = []
+                self.yi = []
+            else:
+                self.theta = x0
+                self.best = 0
+                self.xi = [ x0 ]
+                self.yi = [ 0 ]
+                self.optimizer.tell(x0, 0)
         else:
             self.theta = status['theta']
             self.best = status['best']
@@ -116,7 +131,7 @@ class BayesOptimizer:
             # Here: because we maximize (while the bayes optimizer minimizes), negate!
             self.optimizer.tell(self.xi, list(map(lambda y: -y, self.yi)))
         # Because we added the reference result, we have now one measurement more than steps
-        self.step = len(self.xi) - 1
+        self.step = len(self.xi)
         self.func = f
 
     '''
@@ -144,7 +159,7 @@ class BayesOptimizer:
         done = False
         last = None
         while not (self.done or done):
-            res = self.step_ask_tell()
+            res = self.step_ask_tell(last)
             # print('Type res:', type(res))
             if res:
                 last = res
@@ -155,35 +170,103 @@ class BayesOptimizer:
             print('No models to calculate the expected maximum')
             return self.theta
         else:
-            print('Best taken from expected maximum')
-            xm, ym = expected_minimum(last)
-            print('Best expected x:', xm)
-            # Because we maximize: negate!
-            print('Best expected y:', -ym)
-            return xm
+            return self.get_best(last)
 
-    def step_ask_tell(self):
+    def step_ask_tell(self, last):
         if self.step >= self.msteps:
             self.done = True
             return None
         print('Step:', self.step)
         self.show_kernel()
-        x = self.optimizer.ask()
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=UserWarning)
+            x = self.optimizer.ask()
+        x = self.uniq_candidate(x, last)
         print('Candidate:', x)
         y = self.func(self.config, x, self.base)
         print('Candidate / result:', x, '/', y)
-        # The x returned by ask is of type [np.int32], so we have to cast it
-        self.xi.append(list(map(int, x)))
+        # The x returned by ask is of type [np.int32] if not in_real, so we have to cast it
+        if self.config.in_real:
+            self.xi.append(list(map(float, x)))
+        else:
+            self.xi.append(list(map(round, x)))
         self.yi.append(y)
         # Here: because we maximize, negate!
         res = self.optimizer.tell(x, -y)
-        last = self.yi[-1]
-        if last > self.best:
+        last_y = self.yi[-1]
+        if self.best is None or last_y > self.best:
             self.theta = self.xi[-1]
-            self.best = last
+            self.best = last_y
         print('Theta / value:', self.theta, '/', self.best)
         self.step += 1
         return res
+
+    # Propose best candidates: this is a hard decision, as long the model is inaccurate
+    # This one is used when we finish the number of experiment steps
+    # We want to take a candidate which is pretty good pretty sure:
+    # - we predict the mean and standard deviation (m, s) of all visited points
+    # - do the same for the best possible candidate from the model, if not already visited
+    # - order all candidates reverse by m - 3 * s
+    # - return the best n of them
+    # We can do this only if the regressor is a gaussian process!
+    def get_best(self, last):
+        if self.is_gp and len(self.optimizer.models) > 0:
+            print('Best taken by MS score')
+            rgr = self.optimizer.models[-1]
+            xmb, _ = expected_minimum(last)
+            if not self.config.in_real:
+                xmb = list(map(round, xmb))
+            # candidates = list(set(map(tuple, self.xi + [xmb])))
+            candidates = list(set(map(tuple, [self.theta, xmb])))
+            y_mean, y_std = rgr.predict(candidates, return_std=True)
+            mso = []
+            for c, m, s in zip(candidates, y_mean, y_std):
+                mso.append((m - 3 * s, c, m, s))
+            mso = sorted(mso, reverse=True)
+            print('Best estimated candidates:')
+            i = 0
+            for m3s, c, m, s in mso:
+                print(c, ':\tscore:', m3s, '\tmean:', m, '\tstd:', s)
+                i = i + 1
+                if i >= 3:
+                    break
+            return mso[0][1]
+        else:
+            print('Best taken from expected maximum')
+            xm, ym = expected_minimum(last)
+            print('Best expected candidate:', xm)
+            # Because we maximize: negate!
+            print('Best expected value:', -ym)
+            return xm
+
+    # Check and propose uniq candidates
+    # When ask gives us an already evaluated point, we don't wand to reevaluate it,
+    # and instead take another one, which was not already evaluated
+    def uniq_candidate(self, candidate, last):
+        if candidate not in self.xi:
+            return candidate
+        print('Uniq: ask repeated:', candidate, ' -> try another one')
+        # Now try with the best so far by the model:
+        xm, _ = expected_minimum(last)
+        # Is this necessary?
+        if not self.config.in_real:
+            xm = list(map(round, xm))
+        if xm not in self.xi:
+            return xm
+        print('Uniq: already visited:', xm, ' -> try another one')
+        # Now try combinations of 2 already visited points
+        # They will be in the domain (even after round), because the domain is convex
+        visited = random.sample(self.xi, k=len(self.xi))
+        for i in range(len(visited)):
+            for j in range(i+1, len(visited)):
+                x = list(map(lambda pair: (pair[0] + pair[1]) / 2, zip(visited[i], visited[j])))
+                if not self.config.in_real:
+                    x = list(map(round, x))
+                if x not in self.xi:
+                    return x
+                print('Uniq: already visited:', x, ' -> try another one')
+        # All is already there: return the initial candidate
+        return candidate
 
     def show_kernel(self):
         if self.is_gp and len(self.optimizer.models) > 0:
