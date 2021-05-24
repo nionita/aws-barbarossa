@@ -50,6 +50,8 @@ class Config:
         if self.old_type:
             self.name       = cf.name
             self.simul      = cf.simul
+            self.scale      = cf.simul
+            self.sigma      = 1
             self.pnames     = cf.pnames
             self.base       = cf.base
             self.selfplay   = cf.selfplay
@@ -66,6 +68,8 @@ class Config:
         else:
             self.name       = cf.name
             self.simul      = cf.eval.type == 'simul'
+            self.scale      = cf.eval.params.scale
+            self.sigma      = cf.eval.params.sigma
             self.pnames     = list(map(lambda param: param.name, cf.optimization.params))
             self.base       = cf.eval.params.base
             self.selfplay   = cf.eval.params.selfplay
@@ -81,7 +85,9 @@ class Config:
             self.elo        = cf.eval.params.elo
 
 def init_config(cf):
+    global config
     config = Config(cf)
+    # print('Play config initialized:', dir(config))
 
 # When we work with a base param (like in bayesian optimization)
 # we want to be able to give a fixed configuration (in which we can have also
@@ -113,10 +119,12 @@ timeEst = TimeEstimator()
 # Player 2 is theta- or the base param set
 # Even if we optimize in real parameter, play will round the parameters
 def play(tp, tm=None):
+    global config
     # If the parameters are real, convert them:
     tp = list(map(round, tp))
     if config.simul:
-        return rosenbrock(tp, config.simul)
+        hipars = { 'scale': config.scale, 'sigma': config.sigma }
+        return rosenbrock(tp, hipars)
     os.chdir(config.playdir)
     pla = config.name + '-playerp.cfg'
     with open(pla, 'w', encoding='utf-8') as plf:
@@ -261,16 +269,16 @@ rose_a = 1.
 rose_b = 10.
 rose_offset = 0.
 
-# No noise yet
 # Global minimum of 0 at (rose_a, rose_a)
 # Must be inverted, as it has a minimum
 # We also give an Y offset and scale
-# So now global maximum of rose_offset * scale an (rose_a, rose_a)
-def rosenbrock(params, scale):
+# So now global maximum of rose_offset * scale at (rose_a, rose_a)
+def rosenbrock(params, hipars):
     x, y = params[:2]
-    print('Rosenbrock with', x, y)
     y2 = y - x * x
     val = (rose_a - x) * (rose_a - x) + rose_b * y2 * y2
-    return (-val + rose_offset) * scale
+    r = (-val + rose_offset) * hipars['scale'] + random.gauss(0, hipars['sigma'])
+    print('Rosenbrock with', x, y, '-->', r)
+    return r
 
 # vim: tabstop=4 shiftwidth=4 expandtab

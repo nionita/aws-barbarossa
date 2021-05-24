@@ -16,10 +16,11 @@ import base64
 import re
 from datetime import datetime, timedelta
 
-from Play import play
+from Play import play, init_config
 from Config import Config
 from DSPSAOptimizer import DSPSAOptimizer
 from BayesOptimizer import BayesOptimizer
+from BayesDirectGP import BayesDirectGP
 from AWS import get_sqs
 
 version = '0.1.0'
@@ -261,12 +262,12 @@ def run_local_optimization(args):
         except Exception as exc:
             print('Could not restore status from', sfile, ':', exc)
             return
-    # Should also initialize play
     opt = makeOptimizer(config, save=save, status=status)
     if args.check:
         print('Configuration is ok:')
-        print(config)
         exit(0)
+    # Also initialize play configuration
+    init_config(config)
     r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
@@ -282,6 +283,8 @@ def makeOptimizer(config, save=10, status=None):
         opt = DSPSAOptimizer(config, play, save=save, status=status)
     elif method == 'Bayes':
         opt = BayesOptimizer(config, play, save=save, status=status)
+    elif method == 'BayesDirect':
+        opt = BayesDirectGP(config, play, save=save, status=status)
     else:
         raise ValueError('Optimizer method unknown' + config.method)
     return opt
