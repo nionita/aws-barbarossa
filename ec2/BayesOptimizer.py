@@ -16,56 +16,96 @@ but we can only get noisy results from measurements
 '''
 class BayesOptimizer:
     def __init__(self, config, f, save=None, status=None):
+        self.check_config(config)
         self.config = config
-        self.pnames = config.pnames
-        self.msteps = config.msteps
-        # self.n_jobs = config.n_jobs
         self.save = save
-        self.base = config.pinits
-        # All dimensions are integers in our case, but we can optimize in real (more noise)
-        # Here we will consider the scale as the +/- range from the initial value
-        dimensions = []
-        x0 = []
-        assert type(config.pscale) == list or type(config.pmin) == list and type(config.pmax) == list
-        # Dimensions will be automatically normalized by skopt
-        if type(config.pscale) == list:
-            for pi, si in zip(config.pinits, config.pscale):
-                x0.append(pi)
-                start = pi - si
-                end   = pi + si
-                if config.in_real:
-                    dimensions.append(Real(start, end))
-                else:
-                    dimensions.append(Integer(start, end))
+        local_config = {}
+        # self.n_jobs = self.config.n_jobs
+        if self.config.old_type:
+            self.pnames  = self.config.pnames
+            self.msteps  = self.config.msteps
+            self.base    = self.config.pinits
+            self.in_real = self.config.in_real
+            # All dimensions are integers in our case, but we can optimize in real (more noise)
+            # Here we will consider the scale as the +/- range from the initial value
+            dimensions = []
+            x0 = []
+            # Dimensions will be automatically normalized by skopt
+            if type(self.config.pscale) == list:
+                for pi, si in zip(self.config.pinits, self.config.pscale):
+                    x0.append(pi)
+                    start = pi - si
+                    end   = pi + si
+                    if self.in_real:
+                        dimensions.append(Real(start, end))
+                    else:
+                        dimensions.append(Integer(start, end))
+            else:
+                for pi, si, ei in zip(self.config.pinits, self.config.pmin, self.config.pmax):
+                    x0.append(pi)
+                    if self.in_real:
+                        dimensions.append(Real(si, ei))
+                    else:
+                        dimensions.append(Integer(si, ei))
+            regressor   = self.config.regressor
+            normalize_y = self.config.normalize
+            fix_noise   = self.config.fix_noise
+            games       = self.config.games
+            elo         = self.config.elo
+            isotropic   = self.config.isotropic
+            nu          = self.config.nu
+            ropoints    = self.config.ropoints
+            acq_func    = self.config.acq_func
+            simul       = self.config.simul
         else:
-            for pi, si, ei in zip(config.pinits, config.pmin, config.pmax):
-                x0.append(pi)
-                if config.in_real:
-                    dimensions.append(Real(si, ei))
+            self.pnames  = list(map(lambda p: p.name, self.config.optimization.params))
+            self.msteps  = self.config.optimization.msteps
+            self.base    = list(map(lambda p: p.ini, self.config.optimization.params))
+            self.in_real = self.config.optimization.in_real
+            # All dimensions are integers in our case, but we can optimize in real (more noise)
+            # Here we will consider the scale as the +/- range from the initial value
+            dimensions = []
+            x0 = []
+            # Dimensions will be automatically normalized by skopt
+            for param in self.config.optimization.params:
+                x0.append(param.ini)
+                if self.in_real:
+                    dimensions.append(Real(param.min, param.max))
                 else:
-                    dimensions.append(Integer(si, ei))
+                    dimensions.append(Integer(param.min, param.max))
+            regressor   = self.config.method.params.regressor
+            normalize_y = self.config.method.params.normalize
+            fix_noise   = self.config.method.params.fix_noise
+            games       = self.config.eval.params.games
+            elo         = self.config.eval.params.elo
+            isotropic   = self.config.method.params.isotropic
+            nu          = self.config.method.params.nu
+            ropoints    = self.config.method.params.ropoints
+            isteps      = self.config.method.params.isteps
+            acq_func    = self.config.method.params.acq_func
+            simul       = self.config.eval.type == 'simul'
+
         self.is_gp = False
-        if config.regressor == 'GP':
+        if regressor == 'GP':
             self.is_gp = True
             # Y normalization: GP assumes mean 0, or otherwise normalize (which seems not to work well,
             # as the sample mean should be taken only for random points - we could calculate the mean
             # ourselves from the initial random points - not done for now)
             # Yet is normalization the way to go...
-            normalize_y = 'Y' in config.normalize
 
             # The noise level is fix in our case, as we play a fixed number of games per step
             # (exception: initial / reference point, with noise = 0 - we ignore this)
             # It depends of number of games per step and the loss function (elo/elowish)
             # The formula below is an ELO error approximation for the confidence interval of 95%,
             # which lies by about 2 sigma - we can compute sigma of the error
-            if config.fix_noise:
+            if fix_noise:
                 noise_level_bounds = 'fixed'
-                sigma = 250. / math.sqrt(config.games)
-                if not config.elo:
+                sigma = 250. / math.sqrt(games)
+                if not elo:
                     sigma = sigma * math.log(10) / 400.
                 noise_level = sigma * sigma
             else:
-                if config.elo and not normalize_y:
+                if elo and not normalize_y:
                     noise_level_bounds = (1e-2, 1e4)
                     noise_level = 10
                 else:
@@ -76,31 +116,31 @@ class BayesOptimizer:
             length_scale_bounds = (1e-3, 1e4)
             length_scale = 1
             # Isotropic or anisotropic kernel
-            if not config.isotropic:
+            if not isotropic:
                 length_scale = length_scale * np.ones(len(dimensions))
             # Matern kernel with configurable parameter nu (1.5 = once differentiable functions),
             # white noise kernel and a constant kernel for mean estimatation
             kernel = \
                   ConstantKernel() \
                 + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
-                + 1.0 * Matern(nu=config.nu, length_scale=length_scale, \
+                + 1.0 * Matern(nu=nu, length_scale=length_scale, \
                                length_scale_bounds=length_scale_bounds)
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
             rgr = GaussianProcessRegressor(kernel=kernel,
-                    alpha=0.0, normalize_y=normalize_y, n_restarts_optimizer=config.ropoints)
+                    alpha=0.0, normalize_y=normalize_y, n_restarts_optimizer=ropoints)
         else:
-            rgr = config.regressor
+            rgr = regressor
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration
-        if config.isteps == 0:
+        if isteps == 0:
             n_initial_points = max(self.msteps // 10, len(dimensions) + 1)
         else:
-            n_initial_points = config.isteps
+            n_initial_points = isteps
         self.optimizer = Optimizer(
                 dimensions=dimensions,
                 base_estimator=rgr,
-                acq_func=config.acq_func,
+                acq_func=acq_func,
                 acq_optimizer='sampling',   # without this I got this error:
                                             # grad = self.kernel_.gradient_x(X[0], self.X_train_)
                                             # AttributeError: 'Sum' object has no attribute 'gradient_x'
@@ -112,7 +152,7 @@ class BayesOptimizer:
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
             # Unless we simulate!
-            if config.simul:
+            if simul:
                 self.theta = None
                 self.best = None
                 self.xi = []
@@ -183,10 +223,10 @@ class BayesOptimizer:
             x = self.optimizer.ask()
         x = self.uniq_candidate(x, last)
         print('Candidate:', x)
-        y = self.func(self.config, x, self.base)
+        y = self.func(x, self.base)
         print('Candidate / result:', x, '/', y)
         # The x returned by ask is of type [np.int32] if not in_real, so we have to cast it
-        if self.config.in_real:
+        if self.in_real:
             self.xi.append(list(map(float, x)))
         else:
             self.xi.append(list(map(round, x)))
@@ -214,7 +254,7 @@ class BayesOptimizer:
             print('Best taken by MS score')
             rgr = self.optimizer.models[-1]
             xmb, _ = expected_minimum(last)
-            if not self.config.in_real:
+            if not self.in_real:
                 xmb = list(map(round, xmb))
             # candidates = list(set(map(tuple, self.xi + [xmb])))
             candidates = list(set(map(tuple, [self.theta, xmb])))
@@ -249,7 +289,7 @@ class BayesOptimizer:
         # Now try with the best so far by the model:
         xm, _ = expected_minimum(last)
         # Is this necessary?
-        if not self.config.in_real:
+        if not self.in_real:
             xm = list(map(round, xm))
         if xm not in self.xi:
             return xm
@@ -260,7 +300,7 @@ class BayesOptimizer:
         for i in range(len(visited)):
             for j in range(i+1, len(visited)):
                 x = list(map(lambda pair: (pair[0] + pair[1]) / 2, zip(visited[i], visited[j])))
-                if not self.config.in_real:
+                if not self.in_real:
                     x = list(map(round, x))
                 if x not in self.xi:
                     return x
@@ -288,5 +328,34 @@ class BayesOptimizer:
                 print(title, file=repf)
                 for n, v in zip(self.pnames, list(vec)):
                     print(n, '=', v, file=repf)
+
+    '''
+    We check here all entries on the config that we need, if the config is new style
+    The old style checks all required values or delivers defaults for optional parameters
+    '''
+    def check_config(self, config):
+        if config.old_type:
+            assert config.check('pscale', vtype=list) \
+                or config.check('pmin', vtype=list) and config.check('pmax', vtype=list)
+        else:
+            assert config.check('method.params.regressor', vtype=str, required=True)
+            assert config.check('method.params.normalize', vtype=bool, required=True)
+            assert config.check('method.params.fix_noise', vtype=bool, required=True)
+            assert config.check('method.params.isotropic', vtype=bool, required=True)
+            assert config.check('method.params.nu', vtype=float, required=True)
+            assert config.check('method.params.ropoints', vtype=int, required=True)
+            assert config.check('method.params.isteps', vtype=int, required=True)
+            assert config.check('optimization.params', vtype=list, required=True)
+            for param in config.optimization.params:
+                assert type(param.name) == str
+                assert type(param.ini) == int
+                assert type(param.min) == int
+                assert type(param.max) == int
+            # self.n_jobs = config.n_jobs
+            assert config.check('optimization.msteps', vtype=int, required=True)
+            assert config.check('optimization.in_real', vtype=bool, required=True)
+            assert config.check('eval.type', vtype=str, required=True)
+            assert config.check('eval.params.games', vtype=int, required=True)
+            assert config.check('eval.params.elo', vtype=bool, required=True)
 
 # vim: tabstop=4 shiftwidth=4 expandtab

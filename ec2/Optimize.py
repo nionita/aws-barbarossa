@@ -244,7 +244,7 @@ def run_on_aws(args):
 This runs a local optimization
 '''
 def run_local_optimization(args):
-    print('Running local optimization')
+    print('Local optimization')
     config = Config(args.config)
     os.chdir(config.optdir)
     if args.save:
@@ -261,7 +261,12 @@ def run_local_optimization(args):
         except Exception as exc:
             print('Could not restore status from', sfile, ':', exc)
             return
+    # Should also initialize play
     opt = makeOptimizer(config, save=save, status=status)
+    if args.check:
+        print('Configuration is ok:')
+        print(config)
+        exit(0)
     r = opt.optimize(optimize_callback_local)
     #r = opt.momentum(play, config)
     #r = opt.adadelta(play, config, mult=20, beta=0.995, gamma=0.995, niu=0.999, eps=1E-8)
@@ -269,9 +274,13 @@ def run_local_optimization(args):
     opt.report(r, title='Optimum', file=None)
 
 def makeOptimizer(config, save=10, status=None):
-    if config.method == 'DSPSA':
+    if config.old_type:
+        method = config.method
+    else:
+        method = config.method.type
+    if method == 'DSPSA':
         opt = DSPSAOptimizer(config, play, save=save, status=status)
-    elif config.method == 'Bayes':
+    elif method == 'Bayes':
         opt = BayesOptimizer(config, play, save=save, status=status)
     else:
         raise ValueError('Optimizer method unknown' + config.method)
@@ -290,6 +299,8 @@ def argument_parser():
     local.add_argument('--continue', dest='restore', action='store_const',
             const=True, default=False, help='continue optimization from last saved status')
     local.add_argument('config', type=argparse.FileType('r'))
+    local.add_argument('--check-config', dest='check', action='store_true',
+            default=False, help='check config file and exit')
 
     aws = subparsers.add_parser('aws', help='run an optimization request on AWS (requests from SQS)')
     aws.add_argument('--save', type=int, help='save optimization status after given steps (default: 10)')

@@ -41,19 +41,59 @@ def elowish(frac):
 resre = re.compile(r'End result')
 wdlre = re.compile('[() ,]')
 
+# We prepare the config only once
+config = None
+
+class Config:
+    def __init__(self, cf):
+        self.old_type = cf.old_type
+        if self.old_type:
+            self.name       = cf.name
+            self.simul      = cf.simul
+            self.pnames     = cf.pnames
+            self.base       = cf.base
+            self.selfplay   = cf.selfplay
+            self.playdir    = cf.playdir
+            self.ipgnfile   = cf.ipgnfile
+            self.ipgnlen    = cf.ipgnlen
+            self.depth      = cf.depth
+            self.nodes      = cf.nodes
+            self.play_chunk = cf.play_chunk
+            self.games      = cf.games
+            self.parallel   = cf.parallel
+            self.probto     = cf.probto
+            self.elo        = cf.elo
+        else:
+            self.name       = cf.name
+            self.simul      = cf.eval.type == 'simul'
+            self.pnames     = list(map(lambda param: param.name, cf.optimization.params))
+            self.base       = cf.eval.params.base
+            self.selfplay   = cf.eval.params.selfplay
+            self.playdir    = cf.eval.params.playdir
+            self.ipgnfile   = cf.eval.params.ipgnfile
+            self.ipgnlen    = cf.eval.params.ipgnlen
+            self.depth      = cf.eval.params.depth
+            self.nodes      = cf.eval.params.nodes
+            self.play_chunk = cf.eval.params.play_chunk
+            self.games      = cf.eval.params.games
+            self.parallel   = cf.eval.params.parallel
+            self.probto     = cf.eval.params.probto
+            self.elo        = cf.eval.params.elo
+
+def init_config(cf):
+    config = Config(cf)
+
 # When we work with a base param (like in bayesian optimization)
 # we want to be able to give a fixed configuration (in which we can have also
 # other parameters as the optimized ones set different as from the default
 # self playing program)
 base_file = None
 
-# When we have a ready base param config, this is given in the config
+# When we have a ready base param file, this is given in the config
 # and we probably must copy it to the playdir
-def copy_base_file(config):
-    source = config.base
+def copy_base_file(source, dest):
     print('We have a base file:', source)
     base_file = os.path.basename(source)
-    dest = config.playdir
     if os.path.dirname(source) != dest:
         print('Copy', source, 'to', dest)
         # We copy it only when it's not already there
@@ -72,7 +112,7 @@ timeEst = TimeEstimator()
 # Player 1 is theta+ or the candidate
 # Player 2 is theta- or the base param set
 # Even if we optimize in real parameter, play will round the parameters
-def play(config, tp, tm=None):
+def play(tp, tm=None):
     # If the parameters are real, convert them:
     tp = list(map(round, tp))
     if config.simul:
@@ -84,7 +124,7 @@ def play(config, tp, tm=None):
             plf.write('%s=%d\n' % (p, v))
     if tm is None:
         if base_file is None:
-            copy_base_file()
+            copy_base_file(config.base, config.playdir)
         base = base_file
     else:
         # If the parameters are real, convert them:

@@ -1,4 +1,98 @@
 import re
+import yaml
+
+'''
+The new Config class looks for the file extension and pasrses
+either yaml files or old (ini-style) config files
+'''
+
+class Config:
+    def __init__(self, source):
+        old_type = None
+        if type(source) != dict:
+            # Called with an open file
+            if source.name.endswith('.txt'):
+                source = OldConfig.readConfig(source)
+                old_type = True
+            elif source.name.endswith('.yaml') or source.name.endswith('.yml'):
+                source = yaml.full_load(source)
+                old_type = False
+            else:
+                raise Exception('Config: cannot determine file type for {}'.format(source.name))
+
+        # Here source is a dictionary
+        assert type(source) == dict
+
+        if old_type is None:
+            old_type = 'eval' not in source
+
+        if old_type:
+            self.__dict__ = source
+        else:
+            # Some adjustments we need for new config types:
+            self.__dict__ = dot_helper(source)
+            self.optdir = self.optimization.optdir
+            self.save   = self.optimization.save
+
+        # We must now if we have new or old type config
+        self.old_type = old_type
+
+    def check(self, key, vtype=None, required=False):
+        object = self
+        while '.' in key:
+            prop, key = key.split('.', 1)
+            if not hasattr(object, prop):
+                return False
+            object = object.__dict__[prop]
+        if key in object.__dict__:
+            return vtype is None or type(object.__dict__[key]) == vtype
+        else:
+            return not required
+
+'''
+This is a helper class to permit dictionaly access in dot notation
+for data which is a combination of dict and list (i.e. dict of dicts,
+dict of lists, list of dicts, and so on).
+'''
+class Dot:
+    def __init__(self, data):
+        self.__dict__ = data
+
+    def __getattr__(self, name):
+        return None
+
+    def __repr__(self):
+        rep = 'Dot: {'
+        for key, val in self.__dict__.items():
+            rep += ' {}: {}'.format(key, repr(val))
+        rep += ' }'
+        return rep
+
+'''
+Transform recursive dictionaries at whatever level (including in lists)
+in Dot objects, which can access the keys in dot notation
+'''
+def dot_recursive(data):
+    if type(data) == dict:
+        new_dict = dot_helper(data)
+        return Dot(new_dict)
+    elif type(data) == list:
+        return list(map(dot_recursive, data))
+    else:
+        return data
+
+'''
+Transform dict values recursive in Dot elements, where necessary
+'''
+def dot_helper(data):
+    new_dict = {}
+    for name, val in data.items():
+        new_dict[name] = dot_recursive(val)
+    return new_dict
+
+# This is the old config file, with *.ini syntax
+# It is still supported, yet not further developed
+# It is applied if config file has a suffix of .txt
 
 '''
 A config class for tuning configuration
@@ -38,9 +132,9 @@ epMaterMinor: 1, 1
 kingSafe: 1, 0, 1
 kingOpen: 2, 4, 1
 kingPlaceCent: 8, 1, 1
-
 '''
-class Config:
+
+class OldConfig:
     # These are acceptable fields in section 0, with their type and maybe default value
     # S is string, I integer and F float
     fields = {
@@ -89,7 +183,7 @@ class Config:
     def __init__(self, source):
         if type(source) != dict:
             # Called with an open file
-            source = Config.readConfig(source)
+            source = OldConfig.readConfig(source)
         # Here source is a dictionary
         for name, val in source.items():
             self.__setattr__(name, val)
@@ -97,18 +191,18 @@ class Config:
     @staticmethod
     def accept_data_type(field_name, field_type):
         if field_type not in ['S', 'I', 'F']:
-            raise Exception('Config: wrong field type {} for field {}'.format(field_type, field_name))
+            raise Exception('OldConfig: wrong field type {} for field {}'.format(field_type, field_name))
 
     @staticmethod
     def create_defaults():
         values = dict()
-        for field_name, field_spec in Config.fields.items():
+        for field_name, field_spec in OldConfig.fields.items():
             if type(field_spec) == str:
-                Config.accept_data_type(field_name, field_spec)
+                OldConfig.accept_data_type(field_name, field_spec)
                 values[field_name] = None
             else:
                 field_type, field_ini = field_spec
-                Config.accept_data_type(field_name, field_type)
+                OldConfig.accept_data_type(field_name, field_type)
                 values[field_name] = field_ini
         return values
 
@@ -127,7 +221,7 @@ class Config:
     @staticmethod
     def readConfig(cof):
         # Transform the config file to a dictionary
-        values = Config.create_defaults()
+        values = OldConfig.create_defaults()
         seen = set()
         sectionNames = [dict(), dict()]
         section = 0
@@ -160,8 +254,8 @@ class Config:
                     name = parts[0]
                     val = parts[1]
                     if section == 0:
-                        if name in Config.fields:
-                            field_type = Config.fields[name]
+                        if name in OldConfig.fields:
+                            field_type = OldConfig.fields[name]
                             if type(field_type) == tuple:
                                 field_type = field_type[0]
                             if field_type == 'S':
@@ -173,7 +267,7 @@ class Config:
                             else:
                                 raise Exception('Cannot be here!')
                         else:
-                            print('Config error in line {:d}: unknown config name {:s}'.format(lineno, name))
+                            print('OldConfig error in line {:d}: unknown config name {:s}'.format(lineno, name))
                             error = True
                     else:
                         vals = re.split(r',\s*', val)
@@ -182,28 +276,28 @@ class Config:
                                 expect = len(vals)
 
                             if name in seen:
-                                print('Config error in line {:d}: name {:s} already seen'.format(lineno, name))
+                                print('OldConfig error in line {:d}: name {:s} already seen'.format(lineno, name))
                                 error = True
                             else:
                                 seen.add(name)
                                 sectionNames[section-1][name] = [int(v) for v in vals]
                         else:
                             if expect is None:
-                                print('Config error in line {:d}: should have {:d} or {:d} values, it has {:d}'.format(lineno, section+1, *lenghts, len(vals)))
+                                print('OldConfig error in line {:d}: should have {:d} or {:d} values, it has {:d}'.format(lineno, section+1, *lenghts, len(vals)))
                             else:
-                                print('Config error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, expect, len(vals)))
+                                print('OldConfig error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, expect, len(vals)))
                             error = True
-        for mand in Config.mandatory_fields:
+        for mand in OldConfig.mandatory_fields:
             if values[mand] is None:
-                print('Config does not define mandatory field "{}"'.format(mand))
+                print('OldConfig does not define mandatory field "{}"'.format(mand))
                 error = True
 
         if expect is None:
-            print('Config does not have parameters or weights')
+            print('OldConfig does not have parameters or weights')
             error = True
 
         if error:
-            raise Exception('Config file has errors')
+            raise Exception('OldConfig file has errors')
 
         hasScale = False
 
