@@ -9,6 +9,9 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
+# We need sqrt(2)
+sqrt2 = math.sqrt(2)
+
 '''
 Greedy Bayes optimization with sklearn - with self expanding limits
 We have to optimize a stochastic function of n integer parameters,
@@ -108,13 +111,14 @@ class BayesDirectGP:
             'center': list(map(float, list(self.center)))
         }
 
-    # Find a model best by sampling and predicting
-    # The proposed best will update the center, which is used to generate new samples
+    # Find the models best by sampling and predicting
+    # The proposed best will eventually update the center, which is used to generate new samples
     def model_best(self, max_iters=100, max_unchanged=5, optimistic=True):
         # We have the data so far and want to find the best from the current model
         # We optimize by sampling many points and take the maximum from the GP estimates
         best_x = None
         best_y = None
+        best_s = None
         unchanged = None
         X = np.array(self.xi, dtype=np.float)
         y = np.array(self.yi, dtype=np.float)
@@ -128,9 +132,6 @@ class BayesDirectGP:
             + WhiteKernel(noise_level=self.noise_level, noise_level_bounds=self.noise_level_bounds) \
             + 1.0 * Matern(nu=self.nu, length_scale=self.length_scale, \
                            length_scale_bounds=self.length_scale_bounds)
-        # TODO:
-        # We want to find the kernel parameter for noise_level
-        # if self.
         gp = GaussianProcessRegressor(kernel=kernel, alpha=0.0, normalize_y=False,
                 n_restarts_optimizer=self.ropoints).fit(X, y)
         self.lml = gp.log_marginal_likelihood_value_
@@ -147,28 +148,32 @@ class BayesDirectGP:
             if best_y is None or y_pred_opt[i_max] > best_y:
                 best_y = y_pred_opt[i_max]
                 best_x = alea[i_max]
+                best_s = y_std[i_max]
                 unchanged = 0
             else:
                 unchanged += 1
                 if unchanged > max_unchanged:
                     break
-        # Add the mean for the prediction
-        return (self.round_list(best_x), best_y + y_mean)
+        # Add back the mean
+        return (self.make_list(best_x), best_y + y_mean, best_s)
 
-    # TODO:
-    # Adjust the center depending on predition/reality and noise level
-    # More if prediction is near reality, scaled by the noise
-    def adjust_center(self, x, pred, real):
-        alpha = math.exp(-abs(pred - real))
-        self.center += alpha * (np.array(x, dtype=np.float) - self.center)
+    # Adjust the center depending on prediction & confidence vs. reality
+    # We move towards the candidate with an alpha equal to the probability
+    # P(x < r|x ~ N(p, s)), where r is reality, p is prediction and s is stddev of prediction
+    def adjust_center(self, x_cand, y_pred, y_std, y_real):
+        alpha = 0.5 * (1 + math.erf((y_real - y_pred) / y_std / sqrt2))
+        print('Adjust alpha:', alpha)
+        self.center += alpha * (np.array(x_cand, dtype=np.float) - self.center)
 
     def random_x(self):
         # We mus generate random value to bootstrap the optimizer
         alea = np.random.randn(1, len(self.base))
         alea = self.std * alea + self.center
-        return self.round_list(alea[0])
+        return self.make_list(alea[0])
 
-    def round_list(self, x):
+    def make_list(self, x):
+        if self.in_real:
+            return list(map(float, list(x)))
         return list(map(round, list(x)))
 
     '''
@@ -197,7 +202,7 @@ class BayesDirectGP:
         print('Step:', self.step)
         self.show_kernel()
         if self.step >= self.isteps:
-            x, y_pred = self.model_best()
+            x, y_pred, y_std = self.model_best(optimistic=False)
         else:
             x = self.random_x()
             y_pred = None
@@ -205,16 +210,12 @@ class BayesDirectGP:
         x = list(x)
         print('Candidate:', x)
         if y_pred is not None:
-            print('Predicted y:', y_pred)
+            print('Predicted y:', y_pred, 'with std', y_std)
         y = self.func(x, self.base)
         print('Candidate / result:', x, '/', y)
         if y_pred is not None:
-            self.adjust_center(x, y_pred, y)
-        # The x returned by ask is of type [np.int32] if not in_real, so we have to cast it
-        if self.in_real:
-            self.xi.append(list(map(float, x)))
-        else:
-            self.xi.append(list(map(round, x)))
+            self.adjust_center(x, y_pred, y_std, y)
+        self.xi.append(x)
         self.yi.append(y)
         last_y = self.yi[-1]
         if self.best is None or last_y > self.best:
@@ -232,9 +233,10 @@ class BayesDirectGP:
     # - return the best n of them
     def get_best(self):
         print('Best taken from expected maximum')
-        xm, ym = self.model_best(optimistic=False)
+        xm, ym, ys = self.model_best(optimistic=False)
         print('Best expected candidate:', xm)
-        print('Best expected value:', ym)
+        print('Best expected value:', ym, 'with std', ys)
+        print('Model center:', list(self.center))
         return xm
 
     # Check and propose uniq candidates

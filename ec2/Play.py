@@ -120,11 +120,12 @@ timeEst = TimeEstimator()
 # Even if we optimize in real parameter, play will round the parameters
 def play(tp, tm=None):
     global config
-    # If the parameters are real, convert them:
-    tp = list(map(round, tp))
+    # For the simulation:
     if config.simul:
         hipars = { 'scale': config.scale, 'sigma': config.sigma }
         return rosenbrock(tp, hipars)
+    # If the parameters are real, convert them:
+    tp = list(map(round, tp))
     os.chdir(config.playdir)
     pla = config.name + '-playerp.cfg'
     with open(pla, 'w', encoding='utf-8') as plf:
@@ -277,8 +278,10 @@ def rosenbrock(params, hipars):
     x, y = params[:2]
     y2 = y - x * x
     val = (rose_a - x) * (rose_a - x) + rose_b * y2 * y2
-    r = (-val + rose_offset) * hipars['scale'] + random.gauss(0, hipars['sigma'])
-    print('Rosenbrock with', x, y, '-->', r)
+    v = (-val + rose_offset) * hipars['scale']
+    n = random.gauss(0, hipars['sigma'])
+    r = v + n
+    print('Rosenbrock with', x, y, '-->', v, '+', n, '=', r)
     return r
 
 # vim: tabstop=4 shiftwidth=4 expandtab
