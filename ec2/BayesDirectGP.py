@@ -35,7 +35,7 @@ class BayesDirectGP:
         games       = self.config.eval.params.games
         elo         = self.config.eval.params.elo
         self.nu          = self.config.method.params.nu
-        #self.alpha  = self.config.method.params.alpha
+        self.alpha       = self.config.method.params.alpha
         self.ropoints    = self.config.method.params.ropoints
         self.mopoints    = self.config.method.params.mopoints
         self.isteps      = self.config.method.params.isteps
@@ -158,10 +158,10 @@ class BayesDirectGP:
         return (self.make_list(best_x), best_y + y_mean, best_s)
 
     # Adjust the center depending on prediction & confidence vs. reality
-    # We move towards the candidate with an alpha equal to the probability
+    # We move towards the candidate with a step proportional to the probability
     # P(x < r|x ~ N(p, s)), where r is reality, p is prediction and s is stddev of prediction
     def adjust_center(self, x_cand, y_pred, y_std, y_real):
-        alpha = 0.5 * (1 + math.erf((y_real - y_pred) / y_std / sqrt2))
+        alpha = self.alpha * 0.5 * (1 + math.erf((y_real - y_pred) / y_std / sqrt2))
         print('Adjust alpha:', alpha)
         self.center += alpha * (np.array(x_cand, dtype=np.float) - self.center)
 
@@ -297,7 +297,7 @@ class BayesDirectGP:
             # assert config.check('method.params.normalize', vtype=bool, required=True)
             assert config.check('method.params.fix_noise', vtype=bool, required=True)
             assert config.check('method.params.nu', vtype=float, required=True)
-            #assert config.check('method.params.alpha', vtype=float, required=True)
+            assert config.check('method.params.alpha', vtype=float, required=True)
             assert config.check('method.params.ropoints', vtype=int, required=True)
             assert config.check('method.params.mopoints', vtype=int, required=True)
             assert config.check('method.params.isteps', vtype=int, required=True)
