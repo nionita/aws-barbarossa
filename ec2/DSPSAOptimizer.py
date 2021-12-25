@@ -90,18 +90,18 @@ class DSPSAOptimizer:
             # We calculate the gradients as sum of 2 gradients, as if the base point would
             # be the current parameter point (which is an exageration leading to greater gradients)
             base = np.array(self.config.pinits, dtype=np.float32)
-            df = self.func(self.config, tp, base)
+            df = self.func(tp, base)
             print('df+:', df)
             gk = df / delta
             print('gk+:', gk)
             # The order is inverted here: base and tm!
-            df = self.func(self.config, base, tm)
+            df = self.func(base, tm)
             print('df-:', df)
             gk += df / delta
             print('gk=:', gk)
             agk = ak * gk
         else:
-            df = self.func(self.config, tp, tm)
+            df = self.func(tp, tm)
             gk = df / delta
             agk = ak * gk
             print('df:', df, 'ak:', ak)

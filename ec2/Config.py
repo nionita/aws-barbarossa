@@ -317,7 +317,7 @@ class OldConfig:
                 values['pnames'].append(name)
                 values['pinits'].append(vals[0])
                 values['pscale'].append(vals[1])
-                if scale != 1:
+                if values['pscale'] != 1:
                     hasScale = True
             else:
                 if variant is None:
@@ -337,11 +337,11 @@ class OldConfig:
                 # We have: name: initMid, initEnd, scale
                 values['pnames'].append('mid.' + name)
                 values['pinits'].append(vals[0])
-                values['pscale'].append(scale)
+                values['pscale'].append(vals[2])
                 values['pnames'].append('end.' + name)
                 values['pinits'].append(vals[1])
                 values['pscale'].append(vals[2])
-                if scale != 1:
+                if values['pscale'] != 1:
                     hasScale = True
             else:
                 if variant is None:

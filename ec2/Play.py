@@ -53,7 +53,7 @@ class Config:
             self.scale      = cf.simul
             self.sigma      = 1
             self.pnames     = cf.pnames
-            self.base       = cf.base
+            self.base       = cf.base if hasattr(cf, 'base') else None
             self.selfplay   = cf.selfplay
             self.playdir    = cf.playdir
             self.ipgnfile   = cf.ipgnfile
