@@ -108,8 +108,16 @@ class DSPSAOptimizer:
             print('gk:', gk)
         print('ak * gk:', agk)
         # Here: + because we maximize!
-        self.theta += agk
-        # Regularize, factor should be < 1
+        if self.config.prop_scale == 0.0:
+            self.theta += agk
+        else:
+            # When the parameter change is proportional, we use a multiplicator of: 1 + tanh (s * agk)
+            # where s is the scale and agk is the current scaled gradient per dimension
+            # The sign of a parameter cannot change, only the magnitude
+            factor = 1 + np.tanh(agk * self.config.prop_scale)
+            print('factor:', factor)
+            self.theta *= factor
+        # Regularize, beta should be < 1
         if self.config.beta:
             self.theta *= self.config.beta
         self.statistics.step(agk)

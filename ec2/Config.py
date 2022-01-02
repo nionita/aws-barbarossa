@@ -145,6 +145,8 @@ class OldConfig:
         'acq_func': ('S', 'EI'),    # Could be LCB, EI, gp_hedge and some others
         'normalize': ('S', ''),     # normalization for Bayes GP: '', 'X', 'Y' or 'XY'
         'elo': ('I', 0),            # Play result in Elo difference (default: elowish)
+        'prop_scale': ('F', 0),     # Parameter changes are proportional with this sigmoid scale
+                                    # (default: 0, which means linear)
         'probto': ('F', 0.01),      # Accepted probability of timeout in Play
         'nu': ('F', 1.5),           # Nu param for the Matern kernel when GP
         'fix_noise': ('I', 1),      # Fix the noise from number of games
