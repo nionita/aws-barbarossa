@@ -44,11 +44,17 @@ class DSPSAOptimizer:
     def random_direction(self):
         p = self.theta.shape[0]
         delta = 2 * np.random.randint(0, 2, size=p) - np.ones(p, dtype=np.int)
-        if self.scale is not None:
-            delta = delta * self.scale
+        print('self.prop_delta:', self.config.prop_delta)
+        if False:   #self.scale is not None:
+            print('It has scale')
+            delta1 = delta * self.scale
+        elif self.config.prop_delta != 0:
+            prop_delta = self.theta * self.config.prop_delta
+            prop_delta = np.maximum(prop_delta, 1)
+            delta1 = delta * prop_delta
         pi = np.floor(self.theta) + np.ones(p, dtype=np.float32) / 2
-        tp = np.rint(pi + delta / 2)
-        tm = np.rint(pi - delta / 2)
+        tp = np.rint(pi + delta1 / 2)
+        tm = np.rint(pi - delta1 / 2)
         return tp, tm, delta
 
     '''
@@ -115,6 +121,12 @@ class DSPSAOptimizer:
             # where s is the scale and agk is the current scaled gradient per dimension
             # The sign of a parameter cannot change, only the magnitude
             factor = 1 + np.tanh(agk * self.config.prop_scale)
+            if self.config.prop_max != 0:
+                # Maximum factor should be greater then but around 1, to limit the movement per step
+                fmax = self.config.prop_max
+                fmin = 1. / self.config.prop_max
+                factor = np.minimum(factor, fmax)
+                factor = np.maximum(factor, fmin)
             print('factor:', factor)
             self.theta *= factor
         # Regularize, beta should be < 1

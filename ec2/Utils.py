@@ -34,7 +34,8 @@ class Statistics:
 
     def relevance(self):
         pres = np.abs(self.pressure())
-        return pres / pres.sum()
+        pres = pres / pres.sum()
+        return pres / np.amax(pres)
 
     def get_status(self):
         return {
