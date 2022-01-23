@@ -44,7 +44,7 @@ class DSPSAOptimizer:
     def random_direction(self):
         p = self.theta.shape[0]
         delta = 2 * np.random.randint(0, 2, size=p) - np.ones(p, dtype=np.int)
-        print('self.prop_delta:', self.config.prop_delta)
+        #print('self.prop_delta:', self.config.prop_delta)
         if False:   #self.scale is not None:
             print('It has scale')
             delta1 = delta * self.scale
@@ -120,7 +120,7 @@ class DSPSAOptimizer:
             # When the parameter change is proportional, we use a multiplicator of: 1 + tanh (s * agk)
             # where s is the scale and agk is the current scaled gradient per dimension
             # The sign of a parameter cannot change, only the magnitude
-            factor = 1 + np.tanh(agk * self.config.prop_scale)
+            factor = 1 + np.tanh(np.sign(self.theta) * agk * self.config.prop_scale)
             if self.config.prop_max != 0:
                 # Maximum factor should be greater then but around 1, to limit the movement per step
                 fmax = self.config.prop_max
