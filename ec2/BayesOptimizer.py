@@ -98,6 +98,7 @@ class BayesOptimizer:
             # It depends of number of games per step and the loss function (elo/elowish)
             # The formula below is an ELO error approximation for the confidence interval of 95%,
             # which lies by about 2 sigma - we can compute sigma of the error
+            assert not (fix_noise and normalize_y), "Fixed noise does't work with normalize"
             if fix_noise:
                 noise_level_bounds = 'fixed'
                 sigma = 250. / math.sqrt(games)
@@ -106,25 +107,32 @@ class BayesOptimizer:
                 noise_level = sigma * sigma
             else:
                 if elo and not normalize_y:
-                    noise_level_bounds = (1e-2, 1e4)
+                    noise_level_bounds = (1e-2, 1e5)
                     noise_level = 10
                 else:
                     noise_level_bounds = (1e-6, 1e0)
                     noise_level = 0.01
             # Length scales: because skopt normalizes the dimensions automatically, it is unclear
             # how to proceed here, as the kernel does not know about that normalization...
-            length_scale_bounds = (1e-3, 1e4)
+            length_scale_bounds = (1e-4, 1e5)
             length_scale = 1
             # Isotropic or anisotropic kernel
             if not isotropic:
                 length_scale = length_scale * np.ones(len(dimensions))
             # Matern kernel with configurable parameter nu (1.5 = once differentiable functions),
             # white noise kernel and a constant kernel for mean estimatation
-            kernel = \
-                  ConstantKernel() \
-                + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
-                + 1.0 * Matern(nu=nu, length_scale=length_scale, \
-                               length_scale_bounds=length_scale_bounds)
+            # When we normalize y, we do not need the constant kernel part
+            if normalize_y:
+                kernel = \
+                      WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
+                    + 1.0 * Matern(nu=nu, length_scale=length_scale, \
+                                   length_scale_bounds=length_scale_bounds)
+            else:
+                kernel = \
+                      ConstantKernel() \
+                    + WhiteKernel(noise_level=noise_level, noise_level_bounds=noise_level_bounds) \
+                    + 1.0 * Matern(nu=nu, length_scale=length_scale, \
+                                   length_scale_bounds=length_scale_bounds)
             # We put alpha=0 because we count in the kernel for the noise
             # n_restarts_optimizer is important to find a good fit! (but it costs time)
             rgr = GaussianProcessRegressor(kernel=kernel,
