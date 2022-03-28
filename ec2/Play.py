@@ -198,6 +198,10 @@ def play(tp, tm=None):
                         print('Standard error:', data['stderr'])
                 elif 'incomplete' in data:
                     print('No result from game thread {}'.format(data['id']))
+                    if data['stdout']:
+                        print('Standard output:', data['stdout'])
+                    if data['stderr']:
+                        print('Standard error:', data['stderr'])
                 else:
                     success = True
                     succ_ends += 1
@@ -261,7 +265,7 @@ def play_one(config, args, games, timeout=360, id=0):
                 l = int(ls)
                 break
         if w is None:
-            return { 'id': id, 'incomplete': True }
+            return { 'id': id, 'incomplete': True, 'stdout': status.stdout, 'stderr': status.stderr }
         return { 'id': id, 'result': (w, d, l), 'duration': dt.total_seconds() }
 
 # Rosenbrock function for simulation
