@@ -110,8 +110,8 @@ class BayesOptimizer:
                     noise_level_bounds = (1e-2, 1e5)
                     noise_level = 10
                 else:
-                    noise_level_bounds = (1e-6, 1e0)
-                    noise_level = 0.01
+                    noise_level_bounds = (1e-4, 1e1)
+                    noise_level = 0.1
             # Length scales: because skopt normalizes the dimensions automatically, it is unclear
             # how to proceed here, as the kernel does not know about that normalization...
             length_scale_bounds = (1e-4, 1e5)
@@ -139,6 +139,9 @@ class BayesOptimizer:
                     alpha=0.0, normalize_y=normalize_y, n_restarts_optimizer=ropoints)
         else:
             rgr = regressor
+        # Uniq: maybe not a good idea? Noise is wrong estimated
+        # It should be a parameter
+        self.uniq = False
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration
         if isteps == 0:
@@ -229,7 +232,8 @@ class BayesOptimizer:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', category=UserWarning)
             x = self.optimizer.ask()
-        x = self.uniq_candidate(x, last)
+        if self.uniq:
+            x = self.uniq_candidate(x, last)
         print('Candidate:', x)
         y = self.func(x, self.base)
         print('Candidate / result:', x, '/', y)
@@ -294,14 +298,16 @@ class BayesOptimizer:
         if candidate not in self.xi:
             return candidate
         print('Uniq: ask repeated:', candidate, ' -> try another one')
-        # Now try with the best so far by the model:
-        xm, _ = expected_minimum(last)
-        # Is this necessary?
-        if not self.in_real:
-            xm = list(map(round, xm))
-        if xm not in self.xi:
-            return xm
-        print('Uniq: already visited:', xm, ' -> try another one')
+        # Only when we have a valid last result!
+        if last is not None:
+            # Now try with the best so far by the model:
+            xm, _ = expected_minimum(last)
+            # Is this necessary?
+            if not self.config.in_real:
+                xm = list(map(round, xm))
+            if xm not in self.xi:
+                return xm
+            print('Uniq: already visited:', xm, ' -> try another one')
         # Now try combinations of 2 already visited points
         # They will be in the domain (even after round), because the domain is convex
         visited = random.sample(self.xi, k=len(self.xi))
