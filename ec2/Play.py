@@ -44,13 +44,13 @@ wdlre = re.compile('[() ,]')
 # We prepare the config only once
 config = None
 
-class Config:
+class PlayConfig:
     def __init__(self, cf):
         self.old_type = cf.old_type
         if self.old_type:
             self.name       = cf.name
             self.simul      = cf.simul
-            self.scale      = cf.simul
+            self.scale      = cf.scale
             self.sigma      = 1
             self.pnames     = cf.pnames
             self.base       = cf.base if hasattr(cf, 'base') else None
@@ -86,7 +86,7 @@ class Config:
 
 def init_config(cf):
     global config
-    config = Config(cf)
+    config = PlayConfig(cf)
     # print('Play config initialized:', dir(config))
 
 # When we work with a base param (like in bayesian optimization)

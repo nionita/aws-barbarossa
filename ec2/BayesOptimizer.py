@@ -139,9 +139,9 @@ class BayesOptimizer:
                     alpha=0.0, normalize_y=normalize_y, n_restarts_optimizer=ropoints)
         else:
             rgr = regressor
-        # Uniq: maybe not a good idea? Noise is wrong estimated
+        # Uniq: maybe not a good idea? Noise is wrong estimated - is it?
         # It should be a parameter
-        self.uniq = False
+        self.uniq = True
         # When we start to use the regressor, we should have enough random points
         # for a good space exploration
         if isteps == 0:
@@ -262,18 +262,23 @@ class BayesOptimizer:
     # - return the best n of them
     # We can do this only if the regressor is a gaussian process!
     def get_best(self, last):
+        xm, ym = expected_minimum(last)
+        print('Best expected candidate:', xm)
+        # Because we maximize: negate!
+        print('Best expected value:', -ym)
         if self.is_gp and len(self.optimizer.models) > 0:
             print('Best taken by MS score')
             rgr = self.optimizer.models[-1]
-            xmb, _ = expected_minimum(last)
             if not self.in_real:
-                xmb = list(map(round, xmb))
-            # candidates = list(set(map(tuple, self.xi + [xmb])))
-            candidates = list(set(map(tuple, [self.theta, xmb])))
+                xm = list(map(round, xm))
+            # candidates = list(set(map(tuple, self.xi + [xm])))
+            candidates = list(set(map(tuple, [self.theta, xm])))
             y_mean, y_std = rgr.predict(candidates, return_std=True)
             mso = []
             for c, m, s in zip(candidates, y_mean, y_std):
-                mso.append((m - 3 * s, c, m, s))
+                # Because we maximize: negate!
+                # mso.append((-m - 3 * s, c, -m, s))
+                mso.append((-m - s, c, -m, s))
             mso = sorted(mso, reverse=True)
             print('Best estimated candidates:')
             i = 0
@@ -285,10 +290,6 @@ class BayesOptimizer:
             return mso[0][1]
         else:
             print('Best taken from expected maximum')
-            xm, ym = expected_minimum(last)
-            print('Best expected candidate:', xm)
-            # Because we maximize: negate!
-            print('Best expected value:', -ym)
             return xm
 
     # Check and propose uniq candidates
@@ -303,7 +304,7 @@ class BayesOptimizer:
             # Now try with the best so far by the model:
             xm, _ = expected_minimum(last)
             # Is this necessary?
-            if not self.config.in_real:
+            if not self.in_real:
                 xm = list(map(round, xm))
             if xm not in self.xi:
                 return xm
@@ -369,7 +370,8 @@ class BayesOptimizer:
             assert config.check('optimization.msteps', vtype=int, required=True)
             assert config.check('optimization.in_real', vtype=bool, required=True)
             assert config.check('eval.type', vtype=str, required=True)
-            assert config.check('eval.params.games', vtype=int, required=True)
-            assert config.check('eval.params.elo', vtype=bool, required=True)
+            if config.old_type and config.simul == 0.0 or not config.old_type and config.eval.type != 'simul':
+                assert config.check('eval.params.games', vtype=int, required=True)
+                assert config.check('eval.params.elo', vtype=bool, required=True)
 
 # vim: tabstop=4 shiftwidth=4 expandtab
