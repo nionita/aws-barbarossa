@@ -57,6 +57,7 @@ class BayesOptimizer:
             ropoints    = self.config.ropoints
             acq_func    = self.config.acq_func
             simul       = self.config.simul
+            texel       = self.config.texel
         else:
             self.pnames  = list(map(lambda p: p.name, self.config.optimization.params))
             self.msteps  = self.config.optimization.msteps
@@ -84,6 +85,7 @@ class BayesOptimizer:
             isteps      = self.config.method.params.isteps
             acq_func    = self.config.method.params.acq_func
             simul       = self.config.eval.type == 'simul'
+            texel       = self.config.eval.type == 'texel'
 
         self.is_gp = False
         if regressor == 'GP':
@@ -159,8 +161,8 @@ class BayesOptimizer:
         self.done = False
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
-            # Unless we simulate!
-            if simul:
+            # Unless for texel or simulation!
+            if texel or simul:
                 self.theta = None
                 self.best = None
                 self.xi = []
@@ -363,7 +365,8 @@ class BayesOptimizer:
             assert config.check('optimization.msteps', vtype=int, required=True)
             assert config.check('optimization.in_real', vtype=bool, required=True)
             assert config.check('eval.type', vtype=str, required=True)
-            assert config.check('eval.params.games', vtype=int, required=True)
-            assert config.check('eval.params.elo', vtype=bool, required=True)
+            if config.eval.type == 'selfplay':
+                assert config.check('eval.params.games', vtype=int, required=True)
+                assert config.check('eval.params.elo', vtype=bool, required=True)
 
 # vim: tabstop=4 shiftwidth=4 expandtab

@@ -40,6 +40,7 @@ def elowish(frac):
 
 resre = re.compile(r'End result')
 wdlre = re.compile('[() ,]')
+texre = re.compile(r'Texel error ')
 
 # We prepare the config only once
 config = None
@@ -50,14 +51,17 @@ class Config:
         if self.old_type:
             self.name       = cf.name
             self.simul      = cf.simul
+            self.texel      = cf.texel
+            self.timeout    = cf.timeout
             self.scale      = cf.simul
             self.sigma      = 1
             self.pnames     = cf.pnames
             self.base       = cf.base if hasattr(cf, 'base') else None
-            self.selfplay   = cf.selfplay
+            self.playprog   = cf.playprog
             self.playdir    = cf.playdir
             self.ipgnfile   = cf.ipgnfile
             self.ipgnlen    = cf.ipgnlen
+            self.afile      = cf.afile
             self.depth      = cf.depth
             self.nodes      = cf.nodes
             self.play_chunk = cf.play_chunk
@@ -68,14 +72,17 @@ class Config:
         else:
             self.name       = cf.name
             self.simul      = cf.eval.type == 'simul'
+            self.texel      = cf.eval.type == 'texel'
+            self.timeout    = cf.eval.params.timeout
             self.scale      = cf.eval.params.scale
             self.sigma      = cf.eval.params.sigma
             self.pnames     = list(map(lambda param: param.name, cf.optimization.params))
             self.base       = cf.eval.params.base
-            self.selfplay   = cf.eval.params.selfplay
+            self.playprog   = cf.eval.params.playprog
             self.playdir    = cf.eval.params.playdir
             self.ipgnfile   = cf.eval.params.ipgnfile
             self.ipgnlen    = cf.eval.params.ipgnlen
+            self.afile      = cf.eval.params.afile
             self.depth      = cf.eval.params.depth
             self.nodes      = cf.eval.params.nodes
             self.play_chunk = cf.eval.params.play_chunk
@@ -124,6 +131,7 @@ def play(tp, tm=None):
     if config.simul:
         hipars = { 'scale': config.scale, 'sigma': config.sigma }
         return rosenbrock(tp, hipars)
+    # From here: selfplay or texel error
     # If the parameters are real, convert them:
     tp = list(map(round, tp))
     os.chdir(config.playdir)
@@ -131,6 +139,15 @@ def play(tp, tm=None):
     with open(pla, 'w', encoding='utf-8') as plf:
         for p, v in zip(config.pnames, tp):
             plf.write('%s=%d\n' % (p, v))
+    # Texel method needs only one point, there is no match
+    if config.texel:
+        r = compute_texel_error(pla)
+    else:
+        r = sample_selfplay(pla, tm)
+    return r
+
+def sample_selfplay(pla, tm):
+    global config
     if tm is None:
         if base_file is None:
             copy_base_file(config.base, config.playdir)
@@ -142,7 +159,7 @@ def play(tp, tm=None):
         with open(base, 'w', encoding='utf-8') as plf:
             for p, v in zip(config.pnames, tm):
                 plf.write('%s=%d\n' % (p, v))
-    args = [config.selfplay, '-m', config.playdir, '-a', pla, '-b', base,
+    args = [config.playprog, '-m', config.playdir, '-a', pla, '-b', base,
             '-i', config.ipgnfile, '-d', str(config.depth)]
     if config.nodes:
         args.extend(['-n', str(config.nodes)])
@@ -287,5 +304,34 @@ def rosenbrock(params, hipars):
     r = v + n
     print('Rosenbrock with', x, y, '-->', v, '+', n, '=', r)
     return r
+
+# The error must be minimized (our optimizers maximize!) - so invert the value
+# The function values are small (-4 to 0), so amplify them by a constant factor
+texel_factor = 100
+def compute_texel_error(pla):
+    score = None
+    args = [config.playprog, '-w', config.playdir, '-c', pla, '-a', config.afile]
+    #print(f'Texel computation start: {args}')
+    print('Texel computation start')
+
+    try:
+        starttime = datetime.datetime.now()
+        status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=config.timeout)
+    except subprocess.TimeoutExpired as toe:
+        print (f'Timeout in Texel: {timeout}, stdout: {toe.stdout}, stderr: {toe.stderr}')
+    #except Exception as exc:
+    #    print(f'Exception in Texel: {exc}')
+    else:
+        endtime = datetime.datetime.now()
+        dt = endtime - starttime
+        for line in status.stdout.splitlines():
+            print('Line:', line)
+            if texre.match(line):
+                flds  = line.split()
+                score = -float(flds[-1]) * texel_factor
+                break
+        if score is None:
+            print(f'TexelError output incomplete: {status.stdout}')
+    return score
 
 # vim: tabstop=4 shiftwidth=4 expandtab

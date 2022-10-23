@@ -34,7 +34,7 @@ class Config:
             self.optdir = self.optimization.optdir
             self.save   = self.optimization.save
 
-        # We must now if we have new or old type config
+        # We must know if we have new or old type config
         self.old_type = old_type
 
     def check(self, key, vtype=None, required=False):
@@ -50,7 +50,7 @@ class Config:
             return not required
 
 '''
-This is a helper class to permit dictionaly access in dot notation
+This is a helper class to permit dictionary access in dot notation
 for data which is a combination of dict and list (i.e. dict of dicts,
 dict of lists, list of dicts, and so on).
 '''

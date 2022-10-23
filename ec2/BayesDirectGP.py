@@ -40,6 +40,7 @@ class BayesDirectGP:
         self.mopoints    = self.config.method.params.mopoints
         self.isteps      = self.config.method.params.isteps
         simul       = self.config.eval.type == 'simul'
+        texel       = self.config.eval.type == 'texel'
 
         # Y normalization: GP assumes mean 0
 
@@ -71,8 +72,8 @@ class BayesDirectGP:
         self.done = False
         if status is None:
             # When we start, we know that the initial point is the reference, mark it with 0
-            # Unless we simulate!
-            if simul:
+            # Unless for texel or simulation!
+            if simul or texel:
                 self.theta = self.base
                 self.best = None
                 self.xi = []
@@ -309,7 +310,8 @@ class BayesDirectGP:
             assert config.check('optimization.msteps', vtype=int, required=True)
             assert config.check('optimization.in_real', vtype=bool, required=True)
             assert config.check('eval.type', vtype=str, required=True)
-            assert config.check('eval.params.games', vtype=int, required=True)
-            assert config.check('eval.params.elo', vtype=bool, required=True)
+            if config.eval.type == 'selfplay':
+                assert config.check('eval.params.games', vtype=int, required=True)
+                assert config.check('eval.params.elo', vtype=bool, required=True)
 
 # vim: tabstop=4 shiftwidth=4 expandtab
