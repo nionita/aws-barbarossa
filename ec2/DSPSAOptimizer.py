@@ -44,14 +44,14 @@ class DSPSAOptimizer:
     def random_direction(self):
         p = self.theta.shape[0]
         delta = 2 * np.random.randint(0, 2, size=p) - np.ones(p, dtype=np.int)
-        #print('self.prop_delta:', self.config.prop_delta)
-        if False:   #self.scale is not None:
-            print('It has scale')
-            delta1 = delta * self.scale
-        elif self.config.prop_delta != 0:
+        if self.config.prop_delta != 0:
             prop_delta = self.theta * self.config.prop_delta
             prop_delta = np.maximum(prop_delta, 1)
             delta1 = delta * prop_delta
+        elif self.scale is not None:
+            delta1 = delta * self.scale
+        else:
+            delta1 = delta
         pi = np.floor(self.theta) + np.ones(p, dtype=np.float32) / 2
         tp = np.rint(pi + delta1 / 2)
         tm = np.rint(pi - delta1 / 2)

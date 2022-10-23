@@ -45,7 +45,7 @@ texre = re.compile(r'Texel error ')
 # We prepare the config only once
 config = None
 
-class Config:
+class PlayConfig:
     def __init__(self, cf):
         self.old_type = cf.old_type
         if self.old_type:
@@ -53,7 +53,7 @@ class Config:
             self.simul      = cf.simul
             self.texel      = cf.texel
             self.timeout    = cf.timeout
-            self.scale      = cf.simul
+            self.scale      = cf.scale
             self.sigma      = 1
             self.pnames     = cf.pnames
             self.base       = cf.base if hasattr(cf, 'base') else None
@@ -93,7 +93,7 @@ class Config:
 
 def init_config(cf):
     global config
-    config = Config(cf)
+    config = PlayConfig(cf)
     # print('Play config initialized:', dir(config))
 
 # When we work with a base param (like in bayesian optimization)
@@ -309,6 +309,7 @@ def rosenbrock(params, hipars):
 # The function values are small (-4 to 0), so amplify them by a constant factor
 texel_factor = 100
 def compute_texel_error(pla):
+    global config
     score = None
     args = [config.playprog, '-w', config.playdir, '-c', pla, '-a', config.afile]
     #print(f'Texel computation start: {args}')
