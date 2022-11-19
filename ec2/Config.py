@@ -139,7 +139,10 @@ class OldConfig:
     # S is string, I integer and F float
     fields = {
         'name': 'S',
-        'method': ('S', 'Bayes'),
+        'method': ('S', 'Bayes'),   # kann auch DSPSA sein
+        'texel': ('I', 0),
+        'timeout': ('I', 30),
+        'scale': ('I', 0),
         'regressor': ('S', 'GP'),
         'isotropic': ('I', 0),      # Isotropic kernel (when GP, default: false)
         'acq_func': ('S', 'EI'),    # Could be LCB, EI, gp_hedge and some others
@@ -156,12 +159,13 @@ class OldConfig:
         'in_real': ('I', 0),        # Optimize in real parameters (default: integer)
         'triang': ('S', 'DF'),
         'optdir': ('S', '.'),
-        'selfplay': 'S',
+        'playprog': 'S',
         'playdir': ('S', '.'),
-        'ipgnfile': 'S',
-        'ipgnlen': 'I',
+        'ipgnfile': ('S', ''),
+        'afile': ('S', ''),
+        'ipgnlen': ('I', 0),
         'depth': ('I', 4),
-        'nodes': 'I',
+        'nodes': ('I', 0),
         'games': ('I', 16),
         'laststep': ('F', 0.1),
         'alpha': ('F', 0.501),
@@ -172,10 +176,10 @@ class OldConfig:
         'rend': 'I',
         'save': ('I', 10),
         'parallel': ('I', 1),   # number of parallel playing games
-        'play_chunk': 'I'       # number of games played in a chunk
+        'play_chunk': ('I', 1)  # number of games played in a chunk
     }
 
-    mandatory_fields = ['name', 'selfplay', 'ipgnfile', 'ipgnlen']
+    mandatory_fields = []
 
     '''
     A config can be initialized either with a file name or with a dictionary
@@ -291,6 +295,13 @@ class OldConfig:
                             else:
                                 print('OldConfig error in line {:d}: should have {:d} values, it has {:d}'.format(lineno, expect, len(vals)))
                             error = True
+
+        # Decide what is mandatory:
+        if values['texel'] == 0:
+            OldConfig.mandatory_fields = ['name', 'playprog', 'ipgnfile', 'ipgnlen']
+        else:
+            OldConfig.mandatory_fields = ['name', 'playprog', 'afile']
+
         for mand in OldConfig.mandatory_fields:
             if values[mand] is None:
                 print('OldConfig does not define mandatory field "{}"'.format(mand))

@@ -112,8 +112,8 @@ class BayesOptimizer:
                     noise_level_bounds = (1e-2, 1e5)
                     noise_level = 10
                 else:
-                    noise_level_bounds = (1e-4, 1e1)
-                    noise_level = 0.1
+                    noise_level_bounds = (1e-16, 1e1)
+                    noise_level = 0.01
             # Length scales: because skopt normalizes the dimensions automatically, it is unclear
             # how to proceed here, as the kernel does not know about that normalization...
             length_scale_bounds = (1e-4, 1e5)

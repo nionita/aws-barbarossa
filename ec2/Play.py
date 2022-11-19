@@ -40,7 +40,7 @@ def elowish(frac):
 
 resre = re.compile(r'End result')
 wdlre = re.compile('[() ,]')
-texre = re.compile(r'Texel error ')
+texre = re.compile(r'(Texel|BCE) error ')
 
 # We prepare the config only once
 config = None

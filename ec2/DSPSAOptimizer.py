@@ -91,7 +91,16 @@ class DSPSAOptimizer:
         tp, tm, delta = self.random_direction()
         print('Params +:', tp)
         print('Params -:', tm)
-        if self.config.triang == 'XA':
+        if self.config.texel:
+            # For texel we have to calculate 2 points
+            dfp = self.func(tp)
+            dfm = self.func(tm)
+            df  = dfp - dfm
+            gk  = df / delta
+            agk = ak * gk
+            print('df:', df, 'ak:', ak)
+            print('gk:', gk)
+        elif self.config.triang == 'XA':
             print('ak:', ak)
             # We calculate the gradients as sum of 2 gradients, as if the base point would
             # be the current parameter point (which is an exageration leading to greater gradients)
@@ -134,8 +143,9 @@ class DSPSAOptimizer:
             self.theta *= self.config.beta
         self.statistics.step(agk)
         print('theta:', self.theta)
-        print('pressure:', self.statistics.pressure())
-        print('relevance:', self.statistics.relevance())
+        if not self.config.texel:
+            print('pressure:', self.statistics.pressure())
+            print('relevance:', self.statistics.relevance())
         self.step += 1
         if self.rend is not None:
             ntheta = np.rint(self.theta)
