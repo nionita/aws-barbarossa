@@ -15,12 +15,13 @@ import zlib
 import base64
 import re
 from datetime import datetime, timedelta
+import importlib.util
 
 from Play import play, init_config
 from Config import Config
-from DSPSAOptimizer import DSPSAOptimizer
-from BayesOptimizer import BayesOptimizer
-from BayesDirectGP import BayesDirectGP
+#from DSPSAOptimizer import DSPSAOptimizer
+#from BayesOptimizer import BayesOptimizer
+#from BayesDirectGP import BayesDirectGP
 from AWS import get_sqs
 
 version = '0.1.0'
@@ -246,6 +247,7 @@ This runs a local optimization
 '''
 def run_local_optimization(args):
     print('Local optimization')
+    orig_dir = os.getcwd()
     config = Config(args.config)
     os.chdir(config.optdir)
     if args.save:
@@ -262,7 +264,7 @@ def run_local_optimization(args):
         except Exception as exc:
             print('Could not restore status from', sfile, ':', exc)
             return
-    opt = makeOptimizer(config, save=save, status=status)
+    opt = makeOptimizer(orig_dir, config, save=save, status=status)
     if args.check:
         print('Configuration is ok:')
         exit(0)
@@ -274,20 +276,21 @@ def run_local_optimization(args):
     opt.report(r, title='Optimum', file=os.path.join(config.optdir, config.name + '-optimum.txt'))
     opt.report(r, title='Optimum', file=None)
 
-def makeOptimizer(config, save=10, status=None):
+def makeOptimizer(orig_dir, config, save=10, status=None):
     if config.old_type:
         method = config.method
     else:
         method = config.method.type
-    if method == 'DSPSA':
-        opt = DSPSAOptimizer(config, play, save=save, status=status)
-    elif method == 'Bayes':
-        opt = BayesOptimizer(config, play, save=save, status=status)
-    elif method == 'BayesDirect':
-        opt = BayesDirectGP(config, play, save=save, status=status)
-    else:
+    file_path = f'{orig_dir}/{method}.py'
+    print(f'Load Optimizer {method} from {file_path}')
+    try:
+        spec = importlib.util.spec_from_file_location(method, file_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except:
+        print(f'Cannot find module for optimization method {method}')
         raise ValueError('Optimizer method unknown' + config.method)
-    return opt
+    return module.make_optimizer(config, play, save=save, status=status)
 
 '''
 Define the argument parser

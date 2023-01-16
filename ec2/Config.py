@@ -141,6 +141,7 @@ class OldConfig:
         'name': 'S',
         'method': ('S', 'Bayes'),   # kann auch DSPSA sein
         'texel': ('I', 0),
+        'cache': ('I', 0),
         'timeout': ('I', 30),
         'scale': ('I', 0),
         'regressor': ('S', 'GP'),

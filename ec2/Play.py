@@ -44,6 +44,7 @@ texre = re.compile(r'(Texel|BCE) error ')
 
 # We prepare the config only once
 config = None
+cache = {}
 
 class PlayConfig:
     def __init__(self, cf):
@@ -52,6 +53,7 @@ class PlayConfig:
             self.name       = cf.name
             self.simul      = cf.simul
             self.texel      = cf.texel
+            self.cache      = cf.cache
             self.timeout    = cf.timeout
             self.scale      = cf.scale
             self.sigma      = 1
@@ -127,6 +129,7 @@ timeEst = TimeEstimator()
 # Even if we optimize in real parameter, play will round the parameters
 def play(tp, tm=None):
     global config
+    global cache
     # For the simulation:
     if config.simul:
         hipars = { 'scale': config.scale, 'sigma': config.sigma }
@@ -140,8 +143,20 @@ def play(tp, tm=None):
         for p, v in zip(config.pnames, tp):
             plf.write('%s=%d\n' % (p, v))
     # Texel method needs only one point, there is no match
+    # We can also cache the results for visited parameters
     if config.texel:
-        r = compute_texel_error(pla)
+        got_it = False
+        if config.cache:
+            tpt = tuple(tp)
+            if tpt in cache:
+                r = cache[tpt]
+                got_it = True
+        if got_it:
+            print('Result from cache')
+        else:
+            r = compute_texel_error(pla)
+            if config.cache:
+                cache[tpt] = r
     else:
         r = sample_selfplay(pla, tm)
     return r
@@ -313,7 +328,7 @@ def compute_texel_error(pla):
     score = None
     args = [config.playprog, '-w', config.playdir, '-c', pla, '-a', config.afile]
     #print(f'Texel computation start: {args}')
-    print('Texel computation start')
+    print('Error computation starts')
 
     try:
         starttime = datetime.datetime.now()
