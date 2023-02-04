@@ -162,6 +162,7 @@ class OldConfig:
         'optdir': ('S', '.'),
         'playprog': 'S',
         'playdir': ('S', '.'),
+        'playargs': ('S', ''),
         'ipgnfile': ('S', ''),
         'afile': ('S', ''),
         'ipgnlen': ('I', 0),

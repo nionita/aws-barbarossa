@@ -61,6 +61,7 @@ class PlayConfig:
             self.base       = cf.base if hasattr(cf, 'base') else None
             self.playprog   = cf.playprog
             self.playdir    = cf.playdir
+            self.playargs   = cf.playargs
             self.ipgnfile   = cf.ipgnfile
             self.ipgnlen    = cf.ipgnlen
             self.afile      = cf.afile
@@ -82,6 +83,7 @@ class PlayConfig:
             self.base       = cf.eval.params.base
             self.playprog   = cf.eval.params.playprog
             self.playdir    = cf.eval.params.playdir
+            self.playargs   = cf.eval.playargs
             self.ipgnfile   = cf.eval.params.ipgnfile
             self.ipgnlen    = cf.eval.params.ipgnlen
             self.afile      = cf.eval.params.afile
@@ -327,8 +329,10 @@ def compute_texel_error(pla):
     global config
     score = None
     args = [config.playprog, '-w', config.playdir, '-c', pla, '-a', config.afile]
-    #print(f'Texel computation start: {args}')
-    print('Error computation starts')
+    if len(config.playargs) > 0:
+        playargs = config.playargs.split()
+        args.extend(playargs)
+    print(f'Error computation start: {args}')
 
     try:
         starttime = datetime.datetime.now()
