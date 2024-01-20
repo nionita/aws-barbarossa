@@ -40,7 +40,7 @@ def elowish(frac):
 
 resre = re.compile(r'End result')
 wdlre = re.compile('[() ,]')
-texre = re.compile(r'(Texel|BCE) error ')
+texre = re.compile(r'(Texel|BCE) (error|stats) ')
 
 # We prepare the config only once
 config = None
@@ -201,6 +201,7 @@ def sample_selfplay(pla, tm):
             'games each, timeout =', timeout, 'endless proba =', endless, \
             'timeouts', tto)
 
+    max_exceptions = 10
     # We could calculate the timeout individually before every chunk play by passing
     # a callback to worker function (play_one) - but the timeout calculation is heavy, so
     # we would have to define a kind of cache and cache expiration and calculate the
@@ -213,7 +214,7 @@ def sample_selfplay(pla, tm):
         pending = set([pool.submit(play_one, config, list(args), games, timeout=timeout, id=i) \
                           for i in range(total_starts)])
         cid = total_starts
-        while len(pending) > 0:
+        while max_exceptions > 0 and len(pending) > 0:
             done, not_done = concurrent.futures.wait(pending, return_when=FIRST_COMPLETED)
             new_starts = set()
             for future in done:
@@ -221,6 +222,7 @@ def sample_selfplay(pla, tm):
                 data = future.result()
                 if 'exception' in data:
                     print('Exception in game thread {}: {}'.format(data['id'], data['exception']))
+                    max_exceptions -= 1
                 elif 'timeout' in data:
                     timeout = data['timeout']
                     # The time duration estimator takes care of endless games
@@ -281,6 +283,7 @@ def play_one(config, args, games, timeout=360, id=0):
     # For windows: shell=True to hide the window of the child process - seems not to be necessary!
     try:
         starttime = datetime.datetime.now()
+        #print('Subprocess start:', args)
         status = subprocess.run(args, capture_output=True, cwd=config.playdir, \
                                 text=True, timeout=timeout)
     except subprocess.TimeoutExpired as toe:
@@ -323,8 +326,6 @@ def rosenbrock(params, hipars):
     return r
 
 # The error must be minimized (our optimizers maximize!) - so invert the value
-# The function values are small (-4 to 0), so amplify them by a constant factor
-texel_factor = 100
 def compute_texel_error(pla):
     global config
     score = None
@@ -338,7 +339,7 @@ def compute_texel_error(pla):
         starttime = datetime.datetime.now()
         status = subprocess.run(args, capture_output=True, cwd=config.playdir, text=True, timeout=config.timeout)
     except subprocess.TimeoutExpired as toe:
-        print (f'Timeout in Texel: {timeout}, stdout: {toe.stdout}, stderr: {toe.stderr}')
+        print (f'Timeout in Texel: {toe.timeout}, stdout: {toe.stdout}, stderr: {toe.stderr}')
     #except Exception as exc:
     #    print(f'Exception in Texel: {exc}')
     else:
@@ -348,7 +349,7 @@ def compute_texel_error(pla):
             print('Line:', line)
             if texre.match(line):
                 flds  = line.split()
-                score = -float(flds[-1]) * texel_factor
+                score = -float(flds[-1])
                 break
         if score is None:
             print(f'TexelError output incomplete: {status.stdout}')

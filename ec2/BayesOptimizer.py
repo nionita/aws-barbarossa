@@ -9,6 +9,9 @@ from skopt.space import Real
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
+def make_optimizer(config, f, save, status):
+    return BayesOptimizer(config, f, save=save, status=status)
+
 '''
 Bayes optimization with Skopt
 We have to optimize a stochastic function of n integer parameters,
