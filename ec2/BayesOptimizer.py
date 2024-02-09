@@ -106,7 +106,8 @@ class BayesOptimizer:
             assert not (fix_noise and normalize_y), "Fixed noise does't work with normalize"
             if fix_noise:
                 noise_level_bounds = 'fixed'
-                sigma = 250. / math.sqrt(games)
+                # 2 sigma for 95% confidence intervall
+                sigma = 500. / math.sqrt(2 * games) / 2.
                 if not elo:
                     sigma = sigma * math.log(10) / 400.
                 noise_level = sigma * sigma
